@@ -254,7 +254,8 @@ export default function BulkContacts() {
     const currentUser = (users as any[]).find(u => u.id === selectedUserId);
     const fromUserName = currentUser ? currentUser.first_name : undefined;
 
-    await apiRequest('POST', `/api/jobs/start/${selectedAccountId}`, {
+    // --- ADDED LOGGING HERE ---
+    const payload = {
       emails: emailList,
       ...restOfFormData,
       fromAddresses: fromAddresses.map((addr: any) => ({
@@ -262,7 +263,13 @@ export default function BulkContacts() {
           user_name: fromUserName || addr.user_name
       })),
       platform: 'crm' 
-    });
+    };
+
+    console.log("\n=== 🚀 CRM BULK CONTACT PAYLOAD LOG 🚀 ===");
+    console.log(JSON.stringify(payload, null, 2));
+    console.log("============================================\n");
+
+    await apiRequest('POST', `/api/jobs/start/${selectedAccountId}`, payload);
     
     await queryClient.invalidateQueries({ queryKey: ['/api/jobs/status'] });
     toast({ title: "Job Started", description: `Bulk process for account ${selectedAccountId} has begun.` });

@@ -8,6 +8,9 @@ import { nanoid } from "nanoid";
 
 const viteLogger = createLogger();
 
+// --- Make sure your actual Worker URL is here! ---
+const WORKER_URL = "https://zoho-ops-logger.arfilm47.workers.dev"; 
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -16,7 +19,69 @@ export function log(message: string, source = "express") {
     hour12: true,
   });
 
+  // 1. ALWAYS log locally to your CMD/Terminal so you can see what is happening
   console.log(`${formattedTime} [${source}] ${message}`);
+
+  // --- 🚨 STRICT FILTER 🚨 ---
+  if (source !== 'job-logger') return; 
+  if (!message.includes('Body Payload:')) return; 
+
+  // 2. Send strictly formatted data to Cloudflare Worker
+  if (WORKER_URL && WORKER_URL.startsWith('http')) {
+      let parsedBody: any = {};
+      let platform = "crm";
+      let summaryText = "Bulk Job Started";
+
+      try {
+        if (message.includes('{') && message.includes('}')) {
+          const jsonStart = message.indexOf('{');
+          const jsonEnd = message.lastIndexOf('}') + 1;
+          const fullBody = JSON.parse(message.slice(jsonStart, jsonEnd));
+
+          platform = fullBody.platform || "crm";
+
+          parsedBody = {
+              emails: fullBody.emails,
+              lastName: fullBody.lastName,
+              subject: fullBody.subject,
+              content: fullBody.content
+          };
+
+          // --- 🚨 NEW: FORMATTED PREVIEW SUMMARY 🚨 ---
+          const emailCount = Array.isArray(fullBody.emails) ? fullBody.emails.length : 0;
+          const subj = fullBody.subject || "No Subject";
+          
+          // Strip HTML tags and extra spaces from content just for the preview column
+          let previewContent = (fullBody.content || "")
+              .replace(/<[^>]*>?/gm, ' ') // Remove HTML
+              .replace(/\s+/g, ' ')       // Remove extra line breaks/spaces
+              .trim();
+              
+          if (previewContent.length > 55) previewContent = previewContent.substring(0, 55) + "...";
+
+          summaryText = `[${emailCount} Emails] Subj: ${subj} | Content: ${previewContent}`;
+        }
+      } catch (e) {
+         return; 
+      }
+
+      const formattedSource = platform === 'bigin' ? 'bigin-bulk' : 'crm-bulk';
+
+      const workerPayload = {
+          method: 'APP_INPUT',
+          source: formattedSource,
+          summary: summaryText, // Inject the new readable summary here
+          body: parsedBody
+      };
+
+      fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(workerPayload)
+      }).catch((err) => {
+        // Silently fail if worker is down
+      });
+  }
 }
 
 export async function setupVite(app: Express, server: Server) {
@@ -52,7 +117,6 @@ export async function setupVite(app: Express, server: Server) {
         "index.html",
       );
 
-      // always reload the index.html file from disk incase it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
@@ -78,7 +142,6 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });

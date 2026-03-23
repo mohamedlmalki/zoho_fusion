@@ -186,10 +186,10 @@ class JobManager {
     if (!job || job.status !== 'processing') return;
 
     const email = job.emails[job.currentIndex];
-    const { formData, accountId } = job;
+    const { formData, accountId, platform } = job;
     
-    // --- SMART URL SELECTION ---
-    const apiBase = job.platform === 'bigin' 
+    // Switch APIs intelligently based on the platform from the payload logs
+    const apiBase = platform === 'bigin' 
         ? 'https://www.zohoapis.com/bigin/v2' 
         : 'https://www.zohoapis.com/crm/v2';
 
@@ -204,41 +204,73 @@ class JobManager {
       if (!account) throw new Error(`Account ${accountId} not found.`);
       
       const accessToken = await getAccessToken(account);
+      
+      // Match the fromEmail exactly using the arrays you provided in the logs
       const fromAddress = formData.fromAddresses?.find((addr:any) => addr.email === formData.fromEmail);
-      if (formData.sendEmail && !fromAddress) throw new Error("From address not found");
+      if (formData.sendEmail && !fromAddress) throw new Error("From address not found in payload");
+
+      log(`[${platform.toUpperCase()} WORKER] Creating contact for: ${email}`, 'worker');
 
       // 1. Create Contact
       try {
-        const contactData = { data: [{ Last_Name: formData.lastName, Email: email, ...formData.customFields }] };
+        const contactData = { 
+            data: [{ 
+                Last_Name: formData.lastName, 
+                Email: email, 
+                ...formData.customFields 
+            }] 
+        };
+        
         const contactResponse = await axios.post(`${apiBase}/Contacts`, contactData, {
           headers: { 'Authorization': `Zoho-oauthtoken ${accessToken}` }
         });
+        
         contactResponsePayload = contactResponse.data;
 
         if (contactResponse.data.data[0].status === 'success' || contactResponse.data.data[0].code === 'DUPLICATE_DATA') {
             contactStatus = 'Success';
             contactId = contactResponse.data.data[0].details.id;
+            log(`[${platform.toUpperCase()} WORKER] Contact created/found successfully. ID: ${contactId}`, 'worker');
+        } else {
+            log(`[${platform.toUpperCase()} WORKER] Contact creation failed: ${JSON.stringify(contactResponsePayload)}`, 'worker-error');
         }
       } catch(contactError: any) {
          contactResponsePayload = contactError.response ? contactError.response.data : { message: contactError.message };
+         log(`[${platform.toUpperCase()} WORKER] Contact creation Exception: ${contactError.message}`, 'worker-error');
       }
 
       // 2. Send Email
       if (contactId && formData.sendEmail) {
+        log(`[${platform.toUpperCase()} WORKER] Sending email to: ${email}`, 'worker');
         try {
-            const emailData = { data: [{ from: { user_name: fromAddress.user_name, email: fromAddress.email }, to: [{ user_name: formData.lastName, email }], subject: formData.subject, content: formData.content, mail_format: "html" }] };
+            // Safely handle bigin vs crm user_name differences based on the payload provided
+            const resolvedUserName = fromAddress.user_name || fromAddress.display_value || "User";
+
+            const emailData = { 
+                data: [{ 
+                    from: { user_name: resolvedUserName, email: fromAddress.email }, 
+                    to: [{ user_name: formData.lastName, email }], 
+                    subject: formData.subject, 
+                    content: formData.content, 
+                    mail_format: "html" 
+                }] 
+            };
+            
             const emailResponse = await axios.post(`${apiBase}/Contacts/${contactId}/actions/send_mail`, emailData, {
               headers: { 'Authorization': `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }
             });
+            
             emailResponsePayload = emailResponse.data;
             emailStatus = (emailResponse.data.data[0].status === 'success') ? 'Success' : 'Failed';
+            log(`[${platform.toUpperCase()} WORKER] Email send status: ${emailStatus}`, 'worker');
         } catch(emailError: any) {
             emailStatus = 'Failed';
             emailResponsePayload = emailError.response ? emailError.response.data : { message: emailError.message };
+             log(`[${platform.toUpperCase()} WORKER] Email send Exception: ${emailError.message}`, 'worker-error');
         }
       } else if (!formData.sendEmail) {
         emailStatus = 'Skipped';
-        emailResponsePayload = { message: "Skipped by user." };
+        emailResponsePayload = { message: "Skipped by user settings." };
       }
 
     } catch (criticalError: any) {
@@ -254,7 +286,7 @@ class JobManager {
       
       job.results.push(resultItem);
       
-      // --- LIVE CHECK ---
+      // --- LIVE STATUS CHECK ---
       if (formData.checkStatus && contactId) {
           const checkApiBase = apiBase; 
           (async (idToMonitor, itemToUpdate) => {
@@ -270,13 +302,11 @@ class JobManager {
               
               itemToUpdate.response.live = response.data;
               
-              // --- BIGIN FIX: Look for 'Emails', 'email_related_list', or 'data' ---
               const emails = response.data.Emails || response.data.email_related_list || response.data.data;
               
               if (emails && emails.length > 0) {
                 const latest = emails[0];
                 let type = 'Unknown';
-                // Check if status is array (Bigin) or string
                 if (Array.isArray(latest.status) && latest.status.length > 0) type = latest.status[0].type;
                 else if (typeof latest.status === 'string') type = latest.status;
 

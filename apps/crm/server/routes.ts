@@ -457,6 +457,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/jobs/start/:accountId', (req, res) => {
     const { accountId } = req.params;
+    
+    // --- ADDED LOGGING HERE ---
+    log(`\n=== 📥 NEW INCOMING BULK JOB REQUEST (Account: ${accountId}) ===`, 'job-logger');
+    log(`Timestamp: ${new Date().toISOString()}`, 'job-logger');
+    log(`Body Payload: ${JSON.stringify(req.body, null, 2)}`, 'job-logger');
+    log(`==============================================================\n`, 'job-logger');
+
     const { emails, delay, platform = 'crm', ...formData } = req.body;
     jobManager.startJob(accountId, emails, delay, formData, platform as 'crm' | 'bigin');
     res.status(202).json({ message: 'Job started' });
