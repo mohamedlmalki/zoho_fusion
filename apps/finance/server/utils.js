@@ -55,7 +55,6 @@ const listSaveFiles = () => {
 };
 
 const writeSaveFile = (filename, data) => {
-    // Sanitize filename
     const safeName = filename.replace(/[^a-z0-9_\-]/gi, '_') + '.json';
     const filePath = path.join(SAVES_DIR, safeName);
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
@@ -71,7 +70,6 @@ const readSaveFile = (filename) => {
 };
 
 // --- API HELPERS ---
-
 const createJobId = (socketId, profileName, jobType) => `${socketId}_${profileName}_${jobType}`;
 
 const parseError = (error) => {
@@ -105,7 +103,6 @@ const getValidAccessToken = async (profile, service) => {
     const now = Date.now();
     const cacheKey = `${profile.profileName}_${service}`;
 
-    // Return cached token if valid
     if (tokenCache[cacheKey] && tokenCache[cacheKey].data.access_token && tokenCache[cacheKey].expiresAt > now) {
         return tokenCache[cacheKey].data;
     }
@@ -121,15 +118,12 @@ const getValidAccessToken = async (profile, service) => {
         params.append('client_secret', profile.clientSecret);
         params.append('grant_type', 'refresh_token');
 
-        // FIX: Added explicit header to prevent 400 errors
         const response = await axios.post('https://accounts.zoho.com/oauth/v2/token', params, {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
         
         if (response.data.error) {
-            if (response.data.error === 'invalid_client') {
-                throw new Error('Invalid Client ID or Secret.');
-            }
+            if (response.data.error === 'invalid_client') throw new Error('Invalid Client ID or Secret.');
             throw new Error(JSON.stringify(response.data));
         }
         
@@ -140,7 +134,6 @@ const getValidAccessToken = async (profile, service) => {
         };
         
         return response.data;
-
     } catch (error) {
         const errMsg = error.response?.data?.error || error.message;
         console.error(`TOKEN_REFRESH_FAILED for ${profile.profileName}:`, errMsg);
@@ -152,9 +145,7 @@ const makeApiCall = async (method, relativeUrl, data, profile, service, queryPar
     const tokenResponse = await getValidAccessToken(profile, service);
     const accessToken = tokenResponse.access_token;
     
-    if (!accessToken) {
-        throw new Error('Failed to retrieve a valid access token.');
-    }
+    if (!accessToken) throw new Error('Failed to retrieve a valid access token.');
 
     let baseUrl = 'https://www.zohoapis.com/inventory/v1'; 
     if (service === 'expense') baseUrl = 'https://www.zohoapis.com/expense/v1';
@@ -167,11 +158,7 @@ const makeApiCall = async (method, relativeUrl, data, profile, service, queryPar
     }
 
     const fullUrl = `${baseUrl}${cleanEndpoint}`;
-    
-    const headers = { 
-        'Authorization': `Zoho-oauthtoken ${accessToken}`,
-    };
-    
+    const headers = { 'Authorization': `Zoho-oauthtoken ${accessToken}` };
     const params = { ...queryParams }; 
     
     if (service === 'expense') {
@@ -184,19 +171,121 @@ const makeApiCall = async (method, relativeUrl, data, profile, service, queryPar
         if (profile.inventory?.orgId) params.organization_id = profile.inventory.orgId;
     }
     
-    const axiosConfig = {
-        method,
-        url: fullUrl,
-        data,
-        headers,
-        params
-    };
-    
+    const axiosConfig = { method, url: fullUrl, data, headers, params };
     if (data instanceof FormData) {
         headers['Content-Type'] = `multipart/form-data; boundary=${data.getBoundary()}`;
     }
     
     return axios(axiosConfig);
+};
+
+// --- 🔥 SMART INTENTION LOGGER (FINAL CORRECTED VERSION) 🔥 ---
+const logFrontendIntention = async (moduleName, frontendData) => {
+    if (!frontendData) return;
+    
+    const WORKER_URL = "https://zoho-ops-logger.arfilm47.workers.dev";
+    
+    // 1. 🔥 FLATTEN NESTED DATA 🔥 
+    let flatData = { ...frontendData };
+    ['staticData', 'formData', 'defaultData'].forEach(wrapper => {
+        if (flatData[wrapper] && typeof flatData[wrapper] === 'object') {
+            Object.assign(flatData, flatData[wrapper]); 
+            delete flatData[wrapper]; 
+        }
+    });
+
+    // 2. 🔥 AGGRESSIVE DENY LIST 🔥
+    // Removed 'displayNames' from this list so it actually gets logged!
+    const denyList = [
+        'activeProfile', 'selectedProfileName', 'delay', 'bulkDelay', 'stopAfterFailures', 
+        'processedIds', 'socketId', 'sendCustomEmail', 'sendDefaultEmail', 
+        'customEmailMethod', 'sendEmail', 'status', 'search_text', 'page', 'per_page',
+        'concurrency', 'verifyLog', 'moduleApiName', 'moduleName', 'primaryFieldName', 'bulkField'
+    ];
+    
+    // 3. 🔥 SMART SOURCE NAMING 🔥
+    let service = 'inventory'; 
+    let cleanName = moduleName;
+    
+    if (cleanName.toLowerCase().startsWith('books')) {
+        service = 'books';
+        cleanName = cleanName.substring(5);
+    } else if (cleanName.toLowerCase().startsWith('billing')) {
+        service = 'billing';
+        cleanName = cleanName.substring(7);
+    } else if (cleanName.toLowerCase().startsWith('expense')) {
+        service = 'expense';
+        cleanName = cleanName.substring(7);
+    }
+
+    if (cleanName.toLowerCase() === 'customjob' || cleanName.toLowerCase() === 'creation') {
+        cleanName = 'custom-module';
+    }
+    
+    let sourceName = `zoho-finance-${service}-${cleanName.toLowerCase()}`;
+    
+    let apiName = frontendData.moduleApiName || frontendData.moduleName;
+    if (apiName && apiName.startsWith('cm_')) {
+        sourceName += `-[${apiName.replace('cm_', '')}]`;
+    }
+    
+    let extracted = {};
+    let summaryParts = [];
+    
+    Object.keys(flatData).forEach(key => {
+        if (denyList.includes(key)) return;
+        
+        let val = flatData[key];
+        if (val === undefined || val === null || val === '') return;
+        
+        // 🔥 Beautiful Key Renaming 🔥
+        let cleanKey = key.replace(/_/g, ' ');
+        if (cleanKey === 'bulkData' || cleanKey === 'bulkValues') cleanKey = 'target emails';
+        if (key === 'displayNames') cleanKey = 'Display Name (Applied to all)'; // Forces it to look exactly like your UI
+
+        if (Array.isArray(val)) {
+            extracted[key] = val.length > 50 ? val.slice(0, 50).join(', ') + `\n...[and ${val.length - 50} more]` : val.join(', ');
+            
+            if (val.length === 1) summaryParts.push(`${cleanKey}: ${val[0]}`);
+            else if (val.length <= 3) summaryParts.push(`${cleanKey}: ${val.join(', ')}`);
+            else summaryParts.push(`${cleanKey}: ${val[0]}, ${val[1]} ...[+${val.length - 2} more]`);
+        } 
+        else if (typeof val === 'string') {
+            extracted[key] = val.length > 4000 ? val.substring(0, 4000) + '\n...[Truncated]' : val;
+            
+            if (val.includes('\n')) {
+                const lines = val.split('\n').filter(e => e.trim() !== '');
+                if (lines.length > 1) {
+                    summaryParts.push(`${cleanKey}: [${lines.length} items]`);
+                    return; 
+                }
+            }
+            
+            let cleanStr = val.replace(/<[^>]*>?/gm, '').trim(); 
+            let shortStr = cleanStr.length > 45 ? cleanStr.substring(0, 45) + '...' : cleanStr;
+            summaryParts.push(`${cleanKey}: ${shortStr}`);
+        } 
+        else if (typeof val !== 'object') {
+            extracted[key] = val;
+            summaryParts.push(`${cleanKey}: ${val}`);
+        }
+    });
+    
+    if (Object.keys(extracted).length === 0) return; 
+    
+    const finalSummary = summaryParts.join(' | ');
+
+    const logEntry = {
+        source: sourceName, 
+        method: "APP_INPUT",
+        path: "Frontend UI",
+        status: 200,
+        body: extracted, 
+        summary: finalSummary 
+    };
+    
+    const axios = require('axios');
+    axios.post(WORKER_URL, logEntry).catch(() => {});
 };
 
 module.exports = {
@@ -206,8 +295,8 @@ module.exports = {
     parseError,
     getValidAccessToken,
     makeApiCall,
-    // Exports needed for Save/Load
     writeSaveFile,
     readSaveFile,
-    listSaveFiles
+    listSaveFiles,
+    logFrontendIntention // Export the logger
 };

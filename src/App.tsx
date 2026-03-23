@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Wrench, Banknote, ArrowRight, LayoutDashboard, Users } from "lucide-react";
+import { Wrench, Banknote, ArrowRight, LayoutDashboard, Users, Send } from "lucide-react";
 
 // Simple Component for the Dashboard Card
 const AppCard = ({ title, desc, icon: Icon, color, port, features }: any) => (
@@ -54,8 +54,8 @@ const App = () => {
         </p>
       </div>
 
-      {/* Grid of Apps */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl w-full">
+      {/* Grid of Apps - Updated to lg:grid-cols-4 to fit all 4 apps beautifully */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-[1600px] w-full">
         
         {/* Ops App (Port 8080) */}
         <AppCard 
@@ -102,6 +102,25 @@ const App = () => {
           features={[
             'Zoho CRM', 
             'Zoho Bigin'
+          ]}
+        />
+
+        {/* Fusion Manager App (Port 5176) */}
+        <AppCard 
+          title="Fusion Manager" 
+          desc="Campaigns & Email"
+          icon={Send} 
+          color="#8b5cf6" // Purple
+          port={5176}
+          features={[
+            'ActiveCampaign', 
+            'Brevo',
+            'SendPulse',
+            'MailerSend',
+            'Zoho Mail',
+            'Omnisend',
+            'Loops',
+            'Buttondown'
           ]}
         />
 

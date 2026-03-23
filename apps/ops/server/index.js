@@ -564,7 +564,7 @@ server.listen(PORT, () => {
         const { spawn } = require('child_process');
         const path = require('path');
         
-        const loggerProcess = spawn('node', [path.join(__dirname, 'logger.js')], { 
+        const loggerProcess = spawn('node', [path.join(__dirname, 'analystics.js')], { 
             stdio: 'ignore', 
             detached: false 
         });
@@ -582,6 +582,6 @@ server.listen(PORT, () => {
         process.on('SIGUSR2', killLogger);  // Catches Nodemon restarts
 
     } catch (err) {
-        console.error('[ERROR] Failed to start logger.', err);
+        console.error('[ERROR] Failed to start lg.');
     }
 });

@@ -7,6 +7,7 @@ const {
     readProfiles, writeProfiles, parseError, getValidAccessToken, makeApiCall, createJobId,
     writeSaveFile, readSaveFile, listSaveFiles // <--- ADDED THESE IMPORTS
 } = require('./utils');
+const { logFrontendIntention } = require('./utils');
 
 // --- HANDLER IMPORTS ---
 const inventoryHandler = require('./inventory-handler');
@@ -16,7 +17,6 @@ const expenseHandler = require('./expense-handler');
 const booksCustomHandler = require('./books-custom-handler');
 const billingHandler = require('./billing-handler');
 const billingCustomHandler = require('./billing-custom-handler');
-
 require('dotenv').config();
 
 const app = express();
@@ -418,6 +418,19 @@ io.on('connection', (socket) => {
             if (jobId.startsWith(socket.id)) delete activeJobs[jobId];
         });
     });
+	
+	socket.onAny((eventName, ...args) => {
+        // Broadened to catch 'start', 'handleStart', 'startBulk', etc.
+        if (eventName.toLowerCase().includes('start')) {
+            console.log(`[SOCKET INTERCEPT] Caught matching event: ${eventName}`);
+            
+            // Clean up the module name
+            const moduleName = eventName.replace(/handleStartBulk|startBulk|handleStart|start/gi, '');
+            
+            logFrontendIntention(moduleName, args[0]);
+        }
+    });
+	
 });
 
 server.listen(port, () => {
