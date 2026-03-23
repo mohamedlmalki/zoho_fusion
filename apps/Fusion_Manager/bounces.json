@@ -1,0 +1,72 @@
+[
+  {
+    "recipient": "aaaaa@aa.kfdfdf",
+    "bounceType": "hard",
+    "accountKey": "Bd8l23G08828",
+    "id": "fe6a464e-0f71-44c5-b449-f467f519de0d",
+    "createdAt": "2025-08-07T18:22:28.584Z"
+  },
+  {
+    "recipient": "aaaaa@aa.kfdfdf",
+    "bounceType": "hard",
+    "accountKey": "G0kT0pI7T8N",
+    "id": "4a5e0fbd-5429-4a81-8a5e-448c36ce0c3d",
+    "createdAt": "2025-08-07T18:40:56.920Z"
+  },
+  {
+    "recipient": "aaaaa@aa.kfdfdf",
+    "bounceType": "hard",
+    "accountKey": "Bd8l23G08828",
+    "id": "44cac6be-99d2-45c7-98b9-df6cbcf8bf43",
+    "createdAt": "2025-08-16T21:23:01.850Z"
+  },
+  {
+    "recipient": "aaaa@aa.dsds",
+    "bounceType": "hard",
+    "accountKey": "G0kT0pI7T8N",
+    "id": "c7b91e91-05a1-4e34-9252-201a9287130f",
+    "createdAt": "2025-08-16T21:53:46.893Z"
+  },
+  {
+    "recipient": "test@nnfnf.jfdjfd",
+    "bounceType": "hard",
+    "accountKey": "Bd8l23G08828",
+    "id": "549a62f3-c049-4035-838f-01cbfd9cf576",
+    "createdAt": "2025-08-16T21:56:44.630Z"
+  },
+  {
+    "recipient": "aaaaaaa@azazazazaz.dsdsdsd",
+    "bounceType": "hard",
+    "accountKey": "Bd8l23G08828",
+    "id": "96a888a5-a03a-4cd7-b1ba-6c509f65bee2",
+    "createdAt": "2025-08-16T21:57:14.926Z"
+  },
+  {
+    "recipient": "aaaaaaa@azazazazaz.dsdsdsd",
+    "bounceType": "hard",
+    "accountKey": "N70I7w87875ts",
+    "id": "26b1b265-8117-40a2-98c4-2e29de6b4ea7",
+    "createdAt": "2025-08-16T21:58:01.390Z"
+  },
+  {
+    "recipient": "test@nnfnf.jfdjfd",
+    "bounceType": "hard",
+    "accountKey": "B00M0RB7088c8",
+    "id": "9654455d-1773-49f3-af20-62709b656758",
+    "createdAt": "2025-08-16T22:01:06.842Z"
+  },
+  {
+    "recipient": "aaaaaaaa@aaz.azaz",
+    "bounceType": "hard",
+    "accountKey": "EMfE42caNN",
+    "id": "7fb9f9af-f273-4464-806b-2af38473ae4d",
+    "createdAt": "2025-08-17T20:15:30.222Z"
+  },
+  {
+    "recipient": "haria@petsforlovers.com",
+    "bounceType": "unknown",
+    "accountKey": "zI770wlB7fs",
+    "id": "942db470-de14-4112-9453-626e0c75025f",
+    "createdAt": "2025-08-17T22:05:28.889Z"
+  }
+]
