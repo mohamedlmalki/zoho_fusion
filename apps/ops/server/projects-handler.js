@@ -105,8 +105,10 @@ const handleGetPortals = async (socket, data) => {
     console.log('[SERVER LOG] handleGetPortals triggered.'); 
     const { clientId, clientSecret, refreshToken } = data;
 
+    // --- THE FIX: Make the temp profileName unique using the clientId! ---
+    // This prevents the server from reusing Account 1's cached token for Account 2.
     const tempProfile = {
-        profileName: 'temp_portal_fetch',
+        profileName: `temp_portal_fetch_${clientId || Date.now()}`, 
         clientId,
         clientSecret,
         refreshToken,
@@ -313,7 +315,7 @@ const handleStartBulkCreateTasks = async (socket, data) => {
         tasklistId, 
         delay, 
         bulkDefaultData,
-        stopAfterFailures = 0 
+        stopAfterFailures = 4 
     } = formData;
     
     console.log(`[PROJECTS JOB START] Profile: ${selectedProfileName}. Project ID: ${projectId}. Primary Field: ${primaryField}.`);

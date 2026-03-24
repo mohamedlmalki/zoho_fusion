@@ -149,7 +149,7 @@ const handleStartBulkInsertRecords = async (socket, data) => {
         activeProfile,
         formLinkName,
         primaryFieldLabelName,
-        stopAfterFailures = 0 
+        stopAfterFailures = 4 
     } = data;
     
     const jobId = createJobId(socket.id, selectedProfileName, 'people');

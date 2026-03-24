@@ -1,3 +1,4 @@
+// --- FILE: apps/ops/server/qntrl-handler.js ---
 const { makeApiCall, parseError, createJobId } = require('./utils');
 
 let activeJobs = {};
@@ -26,31 +27,21 @@ async function getFieldMap(activeProfile, formId) {
         console.log(`[QNTRL DEBUG] Scanning ${allFields.length} fields in layout...`);
 
         allFields.forEach(field => {
-            // Find the API name
             const details = field.customfield_details?.[0];
-            // Try all possible properties where the API name might be hidden
             const api_name = details?.column_name || field.column_name || field.api_name; 
             const label = field.field_name;
             
             if (api_name && label) {
                 map[api_name] = label;
-                map[api_name.toLowerCase()] = label; // Store lowercase version for safe matching
-                
-                // --- DEBUG: Log specific fields to check if we are finding "E" ---
-                if (label === "E" || api_name === "customfield_shorttext2") {
-                    console.log(`[QNTRL DEBUG] FOUND TARGET FIELD! Label: "${label}" -> API: "${api_name}"`);
-                }
+                map[api_name.toLowerCase()] = label; 
             }
         });
         
-        // Add standard field mapping
         map['title'] = 'Title';
-        
-        console.log(`[QNTRL] Built Field Map. Size: ${Object.keys(map).length}`);
         return map;
     } catch (e) {
         console.error("[QNTRL] Failed to fetch field map for logging:", e.message);
-        return {}; // Return empty map if fails, logs will just show API names
+        return {}; 
     }
 }
 
@@ -74,8 +65,8 @@ async function createCardApiCall(cardData, formId, activeProfile, orgId, fieldMa
             payload,
             activeProfile,
             'qntrl',
-            {}, // queryParams
-            fieldMap // <--- Pass the Field Map here!
+            {}, 
+            fieldMap 
         );
 
         const cardId = apiResponse.data?.id || 'Unknown';
@@ -176,9 +167,7 @@ const handler = {
             const orgId = activeProfile.qntrl?.orgId;
             if (!orgId) throw new Error("Qntrl Organization ID is not configured.");
 
-            // Fetch map for single card creation too
             const fieldMap = await getFieldMap(activeProfile, formId);
-
             const result = await createCardApiCall(cardData, formId, activeProfile, orgId, fieldMap);
             socket.emit('qntrlSingleCardResult', result);
         } catch (error) {
@@ -189,13 +178,15 @@ const handler = {
 
     handleStartBulkCreateCards: async (socket, data) => {
         const { selectedProfileName, activeProfile, totalToProcess } = data;
-        const { selectedFormId, bulkPrimaryField, bulkPrimaryValues, bulkDefaultData, bulkDelay } = data.formData;
+        const { selectedFormId, bulkPrimaryField, bulkPrimaryValues, bulkDefaultData, bulkDelay, stopAfterFailures = 4 } = data.formData;
         const delay = (Number(bulkDelay) || 1) * 1000;
         const jobType = 'qntrl';
         const jobId = createJobId(socket.id, selectedProfileName, jobType);
 
         console.log(`[INFO] Starting bulk Qntrl card creation for ${selectedProfileName}. Job ID: ${jobId}`);
         activeJobs[jobId] = { status: 'running', total: totalToProcess, processed: 0 };
+        
+        let consecutiveFailures = 0; // 🟢 TRACK FAILURES
 
         try {
             const orgId = activeProfile.qntrl?.orgId;
@@ -205,28 +196,21 @@ const handler = {
                 throw new Error("Form, Primary Field, and Primary Values are required.");
             }
 
-            // 1. Fetch Field Map ONCE at the start of the bulk job
             const fieldMap = await getFieldMap(activeProfile, selectedFormId);
-
             const primaryValues = bulkPrimaryValues.split('\n').filter(v => v.trim() !== '');
 
             for (const primaryValue of primaryValues) {
-                if (activeJobs[jobId]?.status !== 'running') {
-                    if (activeJobs[jobId]?.status === 'ended') {
-                        socket.emit('bulkEnded', { profileName: selectedProfileName, jobType });
-                        break;
-                    }
-                    if (activeJobs[jobId]?.status === 'paused') {
-                        await new Promise(resolve => {
-                            const interval = setInterval(() => {
-                                if (activeJobs[jobId]?.status !== 'paused') {
-                                    clearInterval(interval);
-                                    resolve();
-                                }
-                            }, 1000);
-                        });
-                    }
+                if (!activeJobs[jobId] || activeJobs[jobId].status === 'ended') break;
+
+                // 🟢 HANDLE PAUSE / RESUME LOGIC
+                if (activeJobs[jobId].status === 'paused') {
+                    consecutiveFailures = 0; 
                 }
+                while (activeJobs[jobId]?.status === 'paused') {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                
+                if (!activeJobs[jobId] || activeJobs[jobId].status === 'ended') break;
 
                 const cardData = { ...bulkDefaultData };
                 cardData[bulkPrimaryField] = primaryValue.trim();
@@ -235,8 +219,14 @@ const handler = {
                     cardData['title'] = `Card ${primaryValue.trim()}`;
                 }
 
-                // Pass the fieldMap to the creator function
                 const result = await createCardApiCall(cardData, selectedFormId, activeProfile, orgId, fieldMap);
+
+                // 🟢 INCREMENT OR RESET FAILURES
+                if (result.success) {
+                    consecutiveFailures = 0;
+                } else {
+                    consecutiveFailures++;
+                }
 
                 socket.emit('qntrlResult', {
                     ...result,
@@ -244,19 +234,34 @@ const handler = {
                     profileName: selectedProfileName
                 });
 
+                // 🟢 AUTO-PAUSE IF LIMIT REACHED
+                if (!result.success && stopAfterFailures > 0 && consecutiveFailures >= stopAfterFailures) {
+                    activeJobs[jobId].status = 'paused';
+                    socket.emit('jobPaused', {
+                        profileName: selectedProfileName,
+                        reason: `Auto-paused after ${consecutiveFailures} consecutive failures.`,
+                        jobType: 'qntrl'
+                    });
+                }
+
                 activeJobs[jobId].processed++;
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
 
-            if (activeJobs[jobId]?.status === 'running') {
-                socket.emit('bulkComplete', { profileName: selectedProfileName, jobType });
-            }
         } catch (error) {
             console.error(`[ERROR] Job ${jobId}:`, error);
             const { message } = parseError(error);
             socket.emit('bulkError', { message, profileName: selectedProfileName, jobType });
         } finally {
-            delete activeJobs[jobId];
+            if (activeJobs[jobId]) {
+                const finalStatus = activeJobs[jobId].status;
+                if (finalStatus === 'ended') {
+                    socket.emit('bulkEnded', { profileName: selectedProfileName, jobType: 'qntrl' });
+                } else {
+                    socket.emit('bulkComplete', { profileName: selectedProfileName, jobType: 'qntrl' });
+                }
+                delete activeJobs[jobId];
+            }
             console.log(`[INFO] Job ${jobId} finished.`);
         }
     },

@@ -1,3 +1,4 @@
+// --- FILE: apps/ops/src/components/dashboard/qntrl/QntrlDashboard.tsx ---
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Socket } from 'socket.io-client';
@@ -6,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Profile, QntrlJobs, QntrlJobState } from '@/App';
 import { QntrlForm } from './QntrlForm';
 import { QntrlResultsDisplay } from './QntrlResultsDisplay';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
 type ApiStatus = {
@@ -61,18 +62,64 @@ export const QntrlDashboard: React.FC<QntrlDashboardProps> = ({
     }
   }, [qntrlProfiles, activeProfileName]);
 
+  const setJobStateForProfile = (
+    profileName: string,
+    state: Partial<QntrlJobState> | ((prevState: QntrlJobState) => QntrlJobState)
+  ) => {
+    setJobs(prevJobs => {
+        const currentJobState = prevJobs[profileName] || createInitialJobState();
+        const newState = typeof state === 'function' 
+            ? state(currentJobState)
+            : { ...currentJobState, ...state };
+      
+        return {
+            ...prevJobs,
+            [profileName]: newState,
+        };
+    });
+  };
+
   useEffect(() => {
     if (!socket) return;
+    
     const handleApiStatus = (result: any) => setApiStatus({
       status: result.success ? 'success' : 'error',
       message: result.message,
       fullResponse: result.fullResponse || null
     });
+
+    // 🟢 LISTEN FOR AUTO-PAUSE & COMPLETION
+    const handleJobPaused = (data: { profileName: string, reason: string, jobType: string }) => {
+        if (data.jobType === 'qntrl') {
+            setJobStateForProfile(data.profileName, { isPaused: true });
+            toast({ title: "Auto-Paused", description: data.reason, variant: "destructive" });
+        }
+    };
+    const handleBulkComplete = (data: { profileName: string, jobType: string }) => {
+        if (data.jobType === 'qntrl') {
+            setJobStateForProfile(data.profileName, { isProcessing: false, isPaused: false, isComplete: true });
+            toast({ title: "Job Complete", description: "All records have been processed." });
+        }
+    };
+    const handleBulkEnded = (data: { profileName: string, jobType: string }) => {
+        if (data.jobType === 'qntrl') {
+            setJobStateForProfile(data.profileName, { isProcessing: false, isPaused: false });
+            toast({ title: "Job Ended", description: "The bulk job was ended." });
+        }
+    };
+
     socket.on('apiStatusResult', handleApiStatus);
+    socket.on('jobPaused', handleJobPaused);
+    socket.on('bulkComplete', handleBulkComplete);
+    socket.on('bulkEnded', handleBulkEnded);
+
     return () => {
       socket.off('apiStatusResult', handleApiStatus);
+      socket.off('jobPaused', handleJobPaused);
+      socket.off('bulkComplete', handleBulkComplete);
+      socket.off('bulkEnded', handleBulkEnded);
     };
-  }, [socket]);
+  }, [socket, toast]);
 
   useEffect(() => {
     if (activeProfileName && socket?.connected) {
@@ -93,23 +140,6 @@ export const QntrlDashboard: React.FC<QntrlDashboardProps> = ({
     toast({ title: "Re-checking Connection..." });
   };
 
-  const setJobStateForProfile = (
-    profileName: string,
-    state: Partial<QntrlJobState> | ((prevState: QntrlJobState) => QntrlJobState)
-  ) => {
-    setJobs(prevJobs => {
-        const currentJobState = prevJobs[profileName] || createInitialJobState();
-        const newState = typeof state === 'function' 
-            ? state(currentJobState)
-            : { ...currentJobState, ...state };
-      
-        return {
-            ...prevJobs,
-            [profileName]: newState,
-        };
-    });
-  };
-
   const selectedProfile = qntrlProfiles.find(p => p.profileName === activeProfileName) || null;
   const currentJob = (activeProfileName ? jobs[activeProfileName] : null) || createInitialJobState();
 
@@ -127,7 +157,7 @@ export const QntrlDashboard: React.FC<QntrlDashboardProps> = ({
         socket={socket}
         onEditProfile={onEditProfile}
         onDeleteProfile={onDeleteProfile}
-        service={service as any} // <--- THIS LINE WAS ADDED
+        service={service as any} 
       >
         <div className="space-y-8">
           {activeProfileName && (
@@ -146,7 +176,27 @@ export const QntrlDashboard: React.FC<QntrlDashboardProps> = ({
           )}
         </div>
       </DashboardLayout>
-      <Dialog open={isStatusModalOpen} onOpenChange={setIsStatusModalOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>API Connection Status</DialogTitle><DialogDescription>This is the live status of the connection to the Zoho Qntrl API for the selected profile.</DialogDescription></DialogHeader><div className={`p-4 rounded-md ${apiStatus.status === 'success' ? 'bg-green-100 dark:bg-green-900/50' : apiStatus.status === 'error' ? 'bg-red-100 dark:bg-red-900/50' : 'bg-muted'}`}><p className="font-bold text-lg">{apiStatus.status.charAt(0).toUpperCase() + apiStatus.status.slice(1)}</p><p className="text-sm text-muted-foreground mt-1">{apiStatus.message}</p></div>{apiStatus.fullResponse && (<div className="mt-4"><h4 className="text-sm font-semibold mb-2 text-foreground">Full Response from Server:</h4><pre className="bg-muted p-4 rounded-lg text-xs font-mono text-foreground border max-h-60 overflow-y-auto">{JSON.stringify(apiStatus.fullResponse, null, 2)}</pre></div>)}<Button onClick={() => setIsStatusModalOpen(false)} className="mt-4">Close</Button></DialogContent></Dialog>
+      <Dialog open={isStatusModalOpen} onOpenChange={setIsStatusModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>API Connection Status</DialogTitle>
+            <DialogDescription>This is the live status of the connection to the Zoho Qntrl API for the selected profile.</DialogDescription>
+          </DialogHeader>
+          <div className={`p-4 rounded-md ${apiStatus.status === 'success' ? 'bg-green-100 dark:bg-green-900/50' : apiStatus.status === 'error' ? 'bg-red-100 dark:bg-red-900/50' : 'bg-muted'}`}>
+            <p className="font-bold text-lg">{apiStatus.status.charAt(0).toUpperCase() + apiStatus.status.slice(1)}</p>
+            <p className="text-sm text-muted-foreground mt-1">{apiStatus.message}</p>
+          </div>
+          {apiStatus.fullResponse && (
+            <div className="mt-4">
+              <h4 className="text-sm font-semibold mb-2 text-foreground">Full Response from Server:</h4>
+              <pre className="bg-muted p-4 rounded-lg text-xs font-mono text-foreground border max-h-60 overflow-y-auto">{JSON.stringify(apiStatus.fullResponse, null, 2)}</pre>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setIsStatusModalOpen(false)} className="mt-4">Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

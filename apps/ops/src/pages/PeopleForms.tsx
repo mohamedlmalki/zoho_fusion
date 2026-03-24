@@ -47,7 +47,6 @@ import { formatTime } from '@/lib/utils';
 
 const SERVER_URL = "http://localhost:3000";
 
-// Interface for Form List
 interface PeopleForm {
     componentId: number;
     iscustom: boolean;
@@ -58,7 +57,6 @@ interface PeopleForm {
     viewDetails: { view_Id: number; view_Name: string; };
 }
 
-// Interface for Form Fields
 interface FormComponent {
     comptype: string;
     ismandatory: boolean;
@@ -85,7 +83,6 @@ type ApiStatus = {
     fullResponse?: any;
 };
 
-// Dynamic Form Field Renderer (for both single and bulk)
 const DynamicFormField = ({ field, value, onChange, isBulk = false, disabled = false }: { 
     field: FormComponent, 
     value: string, 
@@ -95,7 +92,6 @@ const DynamicFormField = ({ field, value, onChange, isBulk = false, disabled = f
 }) => {
     const id = `field-${isBulk ? 'bulk-' : ''}${field.labelname}`;
     
-    // In bulk mode, we only use simple inputs for default values.
     if (isBulk) {
         return (
             <div className="space-y-2">
@@ -114,14 +110,11 @@ const DynamicFormField = ({ field, value, onChange, isBulk = false, disabled = f
         );
     }
     
-    // Single Record Mode Logic
     switch (field.comptype) {
         case 'Email':
             return (
                 <div className="space-y-2">
-                    <Label htmlFor={id}>
-                        {field.displayname} {field.ismandatory && <span className="text-destructive">*</span>}
-                    </Label>
+                    <Label htmlFor={id}>{field.displayname} {field.ismandatory && <span className="text-destructive">*</span>}</Label>
                     <Input id={id} type="email" value={value} onChange={(e) => onChange(field.labelname, e.target.value)} maxLength={field.maxLength} disabled={disabled} />
                 </div>
             );
@@ -131,9 +124,7 @@ const DynamicFormField = ({ field, value, onChange, isBulk = false, disabled = f
         case 'Auto_Number':
             return (
                 <div className="space-y-2">
-                    <Label htmlFor={id}>
-                        {field.displayname} {field.ismandatory && <span className="text-destructive">*</span>}
-                    </Label>
+                    <Label htmlFor={id}>{field.displayname} {field.ismandatory && <span className="text-destructive">*</span>}</Label>
                     <Input 
                         id={id} 
                         type={field.comptype === 'Number' ? 'number' : 'text'}
@@ -147,9 +138,7 @@ const DynamicFormField = ({ field, value, onChange, isBulk = false, disabled = f
         case 'Multi_Line':
             return (
                  <div className="space-y-2">
-                    <Label htmlFor={id}>
-                        {field.displayname} {field.ismandatory && <span className="text-destructive">*</span>}
-                    </Label>
+                    <Label htmlFor={id}>{field.displayname} {field.ismandatory && <span className="text-destructive">*</span>}</Label>
                     <Textarea id={id} value={value} onChange={(e) => onChange(field.labelname, e.target.value)} maxLength={field.maxLength} disabled={disabled} />
                 </div>
             );
@@ -157,9 +146,7 @@ const DynamicFormField = ({ field, value, onChange, isBulk = false, disabled = f
             if (field.Options) {
                  return (
                     <div className="space-y-2">
-                        <Label htmlFor={id}>
-                            {field.displayname} {field.ismandatory && <span className="text-destructive">*</span>}
-                        </Label>
+                        <Label htmlFor={id}>{field.displayname} {field.ismandatory && <span className="text-destructive">*</span>}</Label>
                         <Select value={value} onValueChange={(val) => onChange(field.labelname, val)} disabled={disabled}>
                             <SelectTrigger id={id}><SelectValue placeholder="Select an option..." /></SelectTrigger>
                             <SelectContent>
@@ -173,19 +160,14 @@ const DynamicFormField = ({ field, value, onChange, isBulk = false, disabled = f
             }
             return (
                  <div className="space-y-2">
-                    <Label htmlFor={id}>
-                        {field.displayname} (Lookup ID) {field.ismandatory && <span className="text-destructive">*</span>}
-                    </Label>
+                    <Label htmlFor={id}>{field.displayname} (Lookup ID) {field.ismandatory && <span className="text-destructive">*</span>}</Label>
                     <Input id={id} type="text" value={value} onChange={(e) => onChange(field.labelname, e.target.value)} placeholder="Enter Lookup ID" disabled={disabled} />
                 </div>
             )
-        
         default:
             return (
                 <div className="space-y-2">
-                    <Label htmlFor={id}>
-                        {field.displayname} ({field.comptype}) {field.ismandatory && <span className="text-destructive">*</span>}
-                    </Label>
+                    <Label htmlFor={id}>{field.displayname} ({field.comptype}) {field.ismandatory && <span className="text-destructive">*</span>}</Label>
                     <Input id={id} type="text" value={value} onChange={(e) => onChange(field.labelname, e.target.value)} placeholder={`Enter value for ${field.labelname}`} disabled={disabled} />
                 </div>
             );
@@ -209,8 +191,6 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [showCustomOnly, setShowCustomOnly] = useState(true);
-  
-  // Ref to ensure we only handle the redirect once per mount
   const redirectProcessed = useRef(false);
 
   const { jobs, setJobs, createInitialJobState } = props;
@@ -240,10 +220,34 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
     bulkPrimaryValues, 
     bulkDefaultData, 
     bulkDelay,
-    stopAfterFailures 
   } = formData;
 
-  // --- NEW: Calculate Record Count ---
+  // 🟢 FIXED: Extract stopAfterFailures explicitly
+  const stopAfterFailures = (formData as any).stopAfterFailures;
+
+  // 🟢 NEW: FORCE GLOBAL STATE TO DEFAULT TO 4 ON FIRST LOAD
+  useEffect(() => {
+      if (selectedProfile && activeJob) {
+          const currentFormData = activeJob.formData as any;
+          if (currentFormData.pauseInitialized === undefined) {
+              setJobs(prev => {
+                  const currentJob = prev[selectedProfile.profileName] || createInitialJobState();
+                  return {
+                      ...prev,
+                      [selectedProfile.profileName]: {
+                          ...currentJob,
+                          formData: {
+                              ...currentJob.formData,
+                              stopAfterFailures: 4, // Force default to 4!
+                              pauseInitialized: true
+                          }
+                      }
+                  };
+              });
+          }
+      }
+  }, [selectedProfile, activeJob.formData, setJobs, createInitialJobState]);
+
   const recordCount = useMemo(() => {
       if (!bulkPrimaryValues) return 0;
       return bulkPrimaryValues.split('\n').filter(line => line.trim() !== '').length;
@@ -296,9 +300,7 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
   const fetchForms = useCallback(() => {
     if (props.socket && selectedProfile) {
         setIsLoadingForms(true);
-        props.socket.emit('getPeopleForms', {
-            selectedProfileName: selectedProfile.profileName
-        });
+        props.socket.emit('getPeopleForms', { selectedProfileName: selectedProfile.profileName });
     }
   }, [props.socket, selectedProfile]);
 
@@ -314,35 +316,53 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
     
     const handleFormsResult = (result: { success: boolean, forms?: PeopleForm[], error?: string }) => {
         setIsLoadingForms(false);
-        if (result.success && result.forms) {
-            setForms(result.forms);
-        } else {
-            setForms([]);
-            toast({ title: "Error Fetching Forms", description: result.error, variant: "destructive" });
-        }
+        if (result.success && result.forms) setForms(result.forms);
+        else { setForms([]); toast({ title: "Error Fetching Forms", description: result.error, variant: "destructive" }); }
     };
     
     const handleFormComponentsResult = (result: { success: boolean, components?: FormComponent[], error?: string }) => {
         setIsLoadingComponents(false);
-        if (result.success && result.components) {
-            setComponents(result.components);
-            setSingleFormData({});
-        } else {
-            setComponents([]);
-            toast({ title: "Error Fetching Form Fields", description: result.error, variant: "destructive" });
-        }
+        if (result.success && result.components) { setComponents(result.components); setSingleFormData({}); } 
+        else { setComponents([]); toast({ title: "Error Fetching Form Fields", description: result.error, variant: "destructive" }); }
     };
     
     const handleInsertResult = (result: { success: boolean, result?: any, error?: string }) => {
         setIsSubmitting(false);
         if (result.success) {
-            toast({ 
-                title: "Record Added Successfully", 
-                description: result.result?.message || `Record ID: ${result.result?.pkId}` 
-            });
+            toast({ title: "Record Added Successfully", description: result.result?.message || `Record ID: ${result.result?.pkId}` });
             setSingleFormData({});
         } else {
             toast({ title: "Failed to Add Record", description: result.error, variant: "destructive" });
+        }
+    };
+
+    const handleJobPaused = (data: { profileName: string, reason: string, jobType: string }) => {
+        if (data.jobType === 'people') {
+            setJobs((prev: any) => ({
+                ...prev,
+                [data.profileName]: { ...prev[data.profileName], isPaused: true }
+            }));
+            toast({ title: "Auto-Paused", description: data.reason, variant: "destructive" });
+        }
+    };
+
+    const handleBulkComplete = (data: { profileName: string, jobType: string }) => {
+        if (data.jobType === 'people') {
+            setJobs((prev: any) => ({
+                ...prev,
+                [data.profileName]: { ...prev[data.profileName], isProcessing: false, isPaused: false, isComplete: true }
+            }));
+            toast({ title: "Job Complete", description: "All records have been processed." });
+        }
+    };
+
+    const handleBulkEnded = (data: { profileName: string, jobType: string }) => {
+        if (data.jobType === 'people') {
+            setJobs((prev: any) => ({
+                ...prev,
+                [data.profileName]: { ...prev[data.profileName], isProcessing: false, isPaused: false }
+            }));
+            toast({ title: "Job Ended", description: "The bulk job was ended." });
         }
     };
     
@@ -350,14 +370,20 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
     props.socket.on('peopleFormsResult', handleFormsResult);
     props.socket.on('peopleFormComponentsResult', handleFormComponentsResult);
     props.socket.on('peopleInsertRecordResult', handleInsertResult);
+    props.socket.on('jobPaused', handleJobPaused);
+    props.socket.on('bulkComplete', handleBulkComplete);
+    props.socket.on('bulkEnded', handleBulkEnded);
     
     return () => {
       props.socket.off('apiStatusResult', handleApiStatus);
       props.socket.off('peopleFormsResult', handleFormsResult);
       props.socket.off('peopleFormComponentsResult', handleFormComponentsResult);
       props.socket.off('peopleInsertRecordResult', handleInsertResult);
+      props.socket.off('jobPaused', handleJobPaused);
+      props.socket.off('bulkComplete', handleBulkComplete);
+      props.socket.off('bulkEnded', handleBulkEnded);
     };
-  }, [props.socket, toast]);
+  }, [props.socket, toast, setJobs]);
 
   useEffect(() => {
     if (selectedProfile && props.socket) {
@@ -394,10 +420,7 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
   const handleManualVerify = (service: string = 'people') => {
     if (props.socket && selectedProfile) {
       setApiStatus({ status: 'loading', message: 'Verifying...' });
-      props.socket.emit('checkApiStatus', {
-        selectedProfileName: selectedProfile.profileName,
-        service: service,
-      });
+      props.socket.emit('checkApiStatus', { selectedProfileName: selectedProfile.profileName, service: service });
     }
   };
 
@@ -414,25 +437,17 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
   
   const handleSubmit = () => {
       if (!selectedForm || !props.socket) return;
-      
       for (const field of formFields) {
           if (field.ismandatory && !singleFormData[field.labelname]) {
               toast({ title: "Missing Mandatory Field", description: `"${field.displayname}" is required.`, variant: "destructive" });
               return;
           }
       }
-      
       setIsSubmitting(true);
-      props.socket.emit('insertPeopleRecord', {
-          selectedProfileName: selectedProfile?.profileName,
-          formLinkName: selectedForm.formLinkName,
-          inputData: singleFormData
-      });
+      props.socket.emit('insertPeopleRecord', { selectedProfileName: selectedProfile?.profileName, formLinkName: selectedForm.formLinkName, inputData: singleFormData });
   };
 
-  const handleToggleChange = (checked: boolean) => {
-    setShowCustomOnly(checked);
-  };
+  const handleToggleChange = (checked: boolean) => setShowCustomOnly(checked);
   
   const handleFormStateChange = (field: keyof PeopleFormData, value: any) => {
     if (selectedProfile) {
@@ -442,10 +457,7 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
           ...prev,
           [selectedProfile.profileName]: {
             ...currentJob,
-            formData: {
-              ...currentJob.formData,
-              [field]: value
-            }
+            formData: { ...currentJob.formData, [field]: value }
           }
         };
       });
@@ -462,10 +474,7 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
             ...currentJob,
             formData: {
               ...currentJob.formData,
-              bulkDefaultData: {
-                ...currentJob.formData.bulkDefaultData,
-                [labelname]: value
-              }
+              bulkDefaultData: { ...currentJob.formData.bulkDefaultData, [labelname]: value }
             }
           }
         };
@@ -475,14 +484,12 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
 
   const handleStartBulkImport = () => {
     if (!props.socket || !selectedProfile || !selectedForm || !bulkPrimaryField) {
-        toast({ title: "Error", description: "Missing profile, form, or primary field.", variant: "destructive" });
-        return;
+        toast({ title: "Error", description: "Missing profile, form, or primary field.", variant: "destructive" }); return;
     }
     
     const primaryValues = bulkPrimaryValues.split('\n').map(v => v.trim()).filter(Boolean);
     if (primaryValues.length === 0) {
-        toast({ title: "No Primary Values", description: "Please paste values into the list.", variant: "destructive" });
-        return;
+        toast({ title: "No Primary Values", description: "Please paste values into the list.", variant: "destructive" }); return;
     }
 
     setJobs(prev => {
@@ -490,16 +497,8 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
       return {
         ...prev,
         [selectedProfile.profileName]: {
-            ...currentJob,
-            isProcessing: true,
-            isPaused: false,
-            isComplete: false,
-            processingStartTime: new Date(),
-            totalToProcess: primaryValues.length,
-            currentDelay: bulkDelay,
-            results: [], 
-            filterText: '',
-            processingTime: 0, 
+            ...currentJob, isProcessing: true, isPaused: false, isComplete: false, processingStartTime: new Date(),
+            totalToProcess: primaryValues.length, currentDelay: bulkDelay, results: [], filterText: '', processingTime: 0, 
         }
       };
     });
@@ -511,7 +510,7 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
         primaryFieldValues: primaryValues,
         defaultData: bulkDefaultData,
         delay: bulkDelay,
-        stopAfterFailures: stopAfterFailures || 0
+        stopAfterFailures: stopAfterFailures 
     });
   };
 
@@ -532,49 +531,28 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
     if (selectedProfile) {
       setJobs(prev => {
         const profileJob = prev[selectedProfile.profileName] || createInitialJobState();
-        return {
-          ...prev,
-          [selectedProfile.profileName]: {
-            ...profileJob,
-            filterText: text
-          }
-        };
+        return { ...prev, [selectedProfile.profileName]: { ...profileJob, filterText: text } };
       });
     }
   };
 
-  // --- NEW: RETRY FAILED LOGIC ---
   const handleRetryFailed = () => {
       if (!selectedProfile || !activeJob) return;
-
       const failedItems = activeJob.results.filter(r => !r.success);
-      if (failedItems.length === 0) {
-          toast({ title: "No failed items found to retry." });
-          return;
-      }
+      if (failedItems.length === 0) { toast({ title: "No failed items found to retry." }); return; }
 
-      // Assuming 'email' or primary field is the key identifier
       const failedValues = failedItems.map(r => r.email).join('\n'); 
 
       setJobs(prev => ({
           ...prev,
           [selectedProfile.profileName]: {
               ...prev[selectedProfile.profileName],
-              isProcessing: false,
-              isPaused: false,
-              isComplete: false,
-              results: [],
-              processingTime: 0,
-              totalToProcess: failedItems.length,
-              formData: {
-                  ...prev[selectedProfile.profileName].formData,
-                  bulkPrimaryValues: failedValues // Load emails into form
-              }
+              isProcessing: false, isPaused: false, isComplete: false, results: [], processingTime: 0, totalToProcess: failedItems.length,
+              formData: { ...prev[selectedProfile.profileName].formData, bulkPrimaryValues: failedValues }
           }
       }));
       toast({ title: "Retry Ready", description: `${failedItems.length} failed records loaded. Click Start.` });
   };
-  // ------------------------------
 
   const layoutProps = {
     onAddProfile: props.onAddProfile,
@@ -611,33 +589,19 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
         
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <FileText className="mr-2 h-5 w-5" />
-              Select a Form
-            </CardTitle>
-            <CardDescription>
-              Select a form to view its details and add a new record.
-            </CardDescription>
+            <CardTitle className="flex items-center"><FileText className="mr-2 h-5 w-5" /> Select a Form</CardTitle>
+            <CardDescription>Select a form to view its details and add a new record.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
                     <Label htmlFor="form-select">Available Forms ({filteredForms.length})</Label>
                     <div className="flex items-center space-x-2">
-                        <Switch 
-                            id="custom-forms-only" 
-                            checked={showCustomOnly} 
-                            onCheckedChange={handleToggleChange}
-                            disabled={activeJob.isProcessing}
-                        />
+                        <Switch id="custom-forms-only" checked={showCustomOnly} onCheckedChange={handleToggleChange} disabled={activeJob.isProcessing} />
                         <Label htmlFor="custom-forms-only">Show Custom Only</Label>
                     </div>
                 </div>
-                <Select
-                    value={selectedFormId}
-                    onValueChange={(val) => handleFormStateChange('selectedFormId', val)}
-                    disabled={isLoadingForms || forms.length === 0 || activeJob.isProcessing}
-                >
+                <Select value={selectedFormId} onValueChange={(val) => handleFormStateChange('selectedFormId', val)} disabled={isLoadingForms || forms.length === 0 || activeJob.isProcessing}>
                     <SelectTrigger id="form-select" className="w-full">
                         <SelectValue placeholder={isLoadingForms ? "Loading forms..." : "Select a form..."} />
                     </SelectTrigger>
@@ -645,11 +609,7 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
                         {filteredForms.map((form) => (
                             <SelectItem key={form.componentId} value={form.componentId.toString()}>
                                 <div className="flex items-center space-x-2">
-                                    {form.iscustom ? (
-                                        <Badge variant="outline">Custom</Badge>
-                                    ) : (
-                                        <Badge variant="secondary">System</Badge>
-                                    )}
+                                    {form.iscustom ? <Badge variant="outline">Custom</Badge> : <Badge variant="secondary">System</Badge>}
                                     <span>{form.displayName}</span>
                                 </div>
                             </SelectItem>
@@ -669,25 +629,15 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
                     <Card>
                         <CardHeader>
                             <CardTitle>Add Record to "{selectedForm.displayName}"</CardTitle>
-                            <CardDescription>
-                                Fill out the fields below to add a new record.
-                            </CardDescription>
+                            <CardDescription>Fill out the fields below to add a new record.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             {isLoadingComponents ? (
-                                <div className="flex items-center justify-center p-8">
-                                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                </div>
+                                <div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
                             ) : formFields.length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {formFields.map(field => (
-                                        <DynamicFormField 
-                                            key={field.labelname}
-                                            field={field}
-                                            value={singleFormData[field.labelname] || ''}
-                                            onChange={handleSingleFormChange}
-                                            disabled={isSubmitting}
-                                        />
+                                        <DynamicFormField key={field.labelname} field={field} value={singleFormData[field.labelname] || ''} onChange={handleSingleFormChange} disabled={isSubmitting} />
                                     ))}
                                 </div>
                             ) : (
@@ -695,15 +645,11 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
                             )}
                         </CardContent>
                         {formFields.length > 0 && (
-                            <>
-                                <Separator />
-                                <CardFooter className="pt-6">
-                                    <Button onClick={handleSubmit} disabled={isSubmitting}>
-                                        {isSubmitting ? ( <Loader2 className="mr-2 h-4 w-4 animate-spin" /> ) : ( <Send className="mr-2 h-4 w-4" /> )}
-                                        Submit Record
-                                    </Button>
-                                </CardFooter>
-                            </>
+                            <><Separator /><CardFooter className="pt-6">
+                                <Button onClick={handleSubmit} disabled={isSubmitting}>
+                                    {isSubmitting ? ( <Loader2 className="mr-2 h-4 w-4 animate-spin" /> ) : ( <Send className="mr-2 h-4 w-4" /> )} Submit Record
+                                </Button>
+                            </CardFooter></>
                         )}
                     </Card>
                 </TabsContent>
@@ -712,189 +658,102 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
                    <Card>
                         <CardHeader>
                             <CardTitle>Bulk Import to "{selectedForm.displayName}"</CardTitle>
-                            <CardDescription>
-                                Paste a list of values for a primary field, and set default values for all other fields.
-                            </CardDescription>
+                            <CardDescription>Paste a list of values for a primary field, and set default values for all other fields.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
                             {isLoadingComponents ? (
-                                <div className="flex items-center justify-center p-8">
-                                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                </div>
+                                <div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
                             ) : formFields.length > 0 ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             <div className="flex justify-between items-center">
-                                                <Label htmlFor="primary-values">
-                                                    {formFields.find(f => f.labelname === bulkPrimaryField)?.displayname || 'Values'} (one per line)
-                                                </Label>
-                                                {/* --- NEW: Record Counter Badge --- */}
-                                                <Badge variant="secondary" className="font-mono text-xs">
-                                                    {recordCount} records
-                                                </Badge>
+                                                <Label htmlFor="primary-values">{formFields.find(f => f.labelname === bulkPrimaryField)?.displayname || 'Values'} (one per line)</Label>
+                                                <Badge variant="secondary" className="font-mono text-xs">{recordCount} records</Badge>
                                             </div>
                                             <Textarea
-                                                id="primary-values"
-                                                placeholder="Value 1&#x0A;Value 2&#x0A;Value 3"
-                                                className="min-h-[200px] font-mono"
-                                                value={bulkPrimaryValues}
-                                                onChange={(e) => handleFormStateChange('bulkPrimaryValues', e.target.value)}
-                                                disabled={activeJob.isProcessing}
+                                                id="primary-values" placeholder="Value 1&#x0A;Value 2&#x0A;Value 3" className="min-h-[200px] font-mono"
+                                                value={bulkPrimaryValues} onChange={(e) => handleFormStateChange('bulkPrimaryValues', e.target.value)} disabled={activeJob.isProcessing}
                                             />
                                         </div>
                                         
                                         <div className="space-y-2">
                                             <Label htmlFor="primary-field">Primary Field (List)</Label>
-                                            <Select 
-                                                value={bulkPrimaryField} 
-                                                onValueChange={(val) => handleFormStateChange('bulkPrimaryField', val)} 
-                                                disabled={activeJob.isProcessing}
-                                            >
+                                            <Select value={bulkPrimaryField} onValueChange={(val) => handleFormStateChange('bulkPrimaryField', val)} disabled={activeJob.isProcessing}>
                                                 <SelectTrigger id="primary-field"><SelectValue placeholder="Select primary field..." /></SelectTrigger>
                                                 <SelectContent>
-                                                    {formFields.map(f => (
-                                                        <SelectItem key={f.labelname} value={f.labelname}>{f.displayname}</SelectItem>
-                                                    ))}
+                                                    {formFields.map(f => (<SelectItem key={f.labelname} value={f.labelname}>{f.displayname}</SelectItem>))}
                                                 </SelectContent>
                                             </Select>
                                         </div>
 
-                                        {/* --- Delay Input + Auto-Pause + Stats --- */}
                                         <div className="flex flex-wrap items-end gap-6 pt-2">
                                             <div className="space-y-2">
                                                 <Label htmlFor="delay">Delay (seconds)</Label>
-                                                <Input
-                                                    id="delay"
-                                                    type="number"
-                                                    min="0"
-                                                    step="1"
-                                                    value={bulkDelay}
-                                                    onChange={(e) => handleFormStateChange('bulkDelay', parseInt(e.target.value) || 0)}
-                                                    className="w-24"
-                                                    disabled={activeJob.isProcessing}
-                                                />
+                                                <Input id="delay" type="number" min="0" step="1" value={bulkDelay} onChange={(e) => handleFormStateChange('bulkDelay', parseInt(e.target.value) || 0)} className="w-24" disabled={activeJob.isProcessing} />
                                             </div>
 
-                                            {/* --- NEW AUTO-PAUSE INPUT --- */}
+                                            {/* --- 🟢 FIXED AUTO-PAUSE INPUT --- */}
                                             <div className="space-y-2">
-                                                <Label htmlFor="stopFailures" className="whitespace-nowrap">
-                                                    Auto-pause after errors
-                                                </Label>
+                                                <Label htmlFor="stopFailures" className="whitespace-nowrap">Auto-pause after errors</Label>
                                                 <div className="flex items-center gap-2">
                                                     <Input
                                                         id="stopFailures"
                                                         type="number"
                                                         min="0"
                                                         placeholder="0"
-                                                        value={stopAfterFailures || 0}
-                                                        onChange={(e) => handleFormStateChange('stopAfterFailures', parseInt(e.target.value) || 0)}
+                                                        value={stopAfterFailures === undefined ? '' : stopAfterFailures}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            handleFormStateChange('stopAfterFailures' as any, val === '' ? 0 : parseInt(val));
+                                                        }}
                                                         className="w-24"
                                                         disabled={activeJob.isProcessing}
                                                     />
                                                     <span className="text-xs text-muted-foreground">(0 = disabled)</span>
                                                 </div>
                                             </div>
-                                            {/* --------------------------- */}
 
                                             {activeJob && (activeJob.isProcessing || activeJob.results.length > 0) && (
                                                 <div className="flex items-center gap-3 bg-muted/40 p-2 rounded-md border border-border h-10">
-                                                    <div className="flex items-center gap-2 px-2">
-                                                        <Clock className="h-3 w-3 text-muted-foreground" />
-                                                        <span className="font-mono text-sm font-medium">{formatTime(activeJob.processingTime)}</span>
-                                                    </div>
+                                                    <div className="flex items-center gap-2 px-2"><Clock className="h-3 w-3 text-muted-foreground" /><span className="font-mono text-sm font-medium">{formatTime(activeJob.processingTime)}</span></div>
                                                     <Separator orientation="vertical" className="h-4" />
-                                                    <div className="flex items-center gap-2 px-2">
-                                                        <Hourglass className="h-3 w-3 text-muted-foreground" />
-                                                        <span className="font-mono text-sm font-medium">{remainingCount < 0 ? 0 : remainingCount}</span>
-                                                    </div>
+                                                    <div className="flex items-center gap-2 px-2"><Hourglass className="h-3 w-3 text-muted-foreground" /><span className="font-mono text-sm font-medium">{remainingCount < 0 ? 0 : remainingCount}</span></div>
                                                     <Separator orientation="vertical" className="h-4" />
-                                                    <div className="flex items-center gap-2 px-2 text-success">
-                                                        <CheckCircle2 className="h-3 w-3" />
-                                                        <span className="font-mono text-sm font-bold">{activeJob.results.filter(r => r.success).length}</span>
-                                                    </div>
+                                                    <div className="flex items-center gap-2 px-2 text-success"><CheckCircle2 className="h-3 w-3" /><span className="font-mono text-sm font-bold">{activeJob.results.filter(r => r.success).length}</span></div>
                                                     <Separator orientation="vertical" className="h-4" />
-                                                    <div className="flex items-center gap-2 px-2 text-destructive">
-                                                        <XCircle className="h-3 w-3" />
-                                                        <span className="font-mono text-sm font-bold">{activeJob.results.filter(r => !r.success).length}</span>
-                                                    </div>
+                                                    <div className="flex items-center gap-2 px-2 text-destructive"><XCircle className="h-3 w-3" /><span className="font-mono text-sm font-bold">{activeJob.results.filter(r => !r.success).length}</span></div>
                                                 </div>
                                             )}
                                         </div>
-                                        {/* -------------------------------------- */}
-
                                     </div>
                                     
                                     <div className="space-y-4">
                                         <Label>Default Values (for all records)</Label>
                                         {formFields.filter(f => f.labelname !== bulkPrimaryField).map(field => (
-                                            <DynamicFormField
-                                                key={`bulk-${field.labelname}`}
-                                                field={field}
-                                                value={bulkDefaultData[field.labelname] || ''}
-                                                onChange={handleBulkDefaultDataChange}
-                                                isBulk={true}
-                                                disabled={activeJob.isProcessing}
-                                            />
+                                            <DynamicFormField key={`bulk-${field.labelname}`} field={field} value={bulkDefaultData[field.labelname] || ''} onChange={handleBulkDefaultDataChange} isBulk={true} disabled={activeJob.isProcessing} />
                                         ))}
                                     </div>
                                 </div>
                             ) : (
                                 <p className="text-muted-foreground">No fields found for this form or fields could not be loaded.</p>
                             )}
-
                         </CardContent>
                         {formFields.length > 0 && (
                              <CardFooter className="flex flex-col gap-3">
                                 {!activeJob.isProcessing ? (
                                     <div className="flex gap-2 w-full">
-                                        <Button
-                                            onClick={handleStartBulkImport}
-                                            disabled={!bulkPrimaryField || !bulkPrimaryValues}
-                                            variant="premium"
-                                            size="lg"
-                                            className="flex-1"
-                                        >
-                                            <Send className="mr-2 h-4 w-4" />
-                                            Start Bulk Import
-                                        </Button>
-
-                                        {/* --- NEW: Retry Button --- */}
+                                        <Button onClick={handleStartBulkImport} disabled={!bulkPrimaryField || !bulkPrimaryValues} variant="default" size="lg" className="flex-1"><Send className="mr-2 h-4 w-4" /> Start Bulk Import</Button>
                                         {activeJob.results.filter(r => !r.success).length > 0 && (
-                                            <Button
-                                                variant="secondary"
-                                                size="lg"
-                                                className="border-red-200 hover:bg-red-50 text-red-700"
-                                                onClick={handleRetryFailed}
-                                            >
-                                                <RotateCcw className="mr-2 h-4 w-4" />
-                                                Retry Failed ({activeJob.results.filter(r => !r.success).length})
-                                            </Button>
+                                            <Button variant="secondary" size="lg" className="border-red-200 hover:bg-red-50 text-red-700" onClick={handleRetryFailed}><RotateCcw className="mr-2 h-4 w-4" /> Retry Failed ({activeJob.results.filter(r => !r.success).length})</Button>
                                         )}
                                     </div>
                                 ) : (
                                     <div className="flex items-center justify-center space-x-4 w-full">
-                                        <Button
-                                            type="button"
-                                            variant="secondary"
-                                            size="lg"
-                                            onClick={handlePauseResume}
-                                        >
-                                            {activeJob.isPaused ? (
-                                                <><Play className="h-4 w-4 mr-2" />Resume Job</>
-                                            ) : (
-                                                <><Pause className="h-4 w-4 mr-2" />Pause Job</>
-                                            )}
+                                        <Button type="button" variant="secondary" size="lg" onClick={handlePauseResume}>
+                                            {activeJob.isPaused ? <><Play className="h-4 w-4 mr-2" />Resume Job</> : <><Pause className="h-4 w-4 mr-2" />Pause Job</>}
                                         </Button>
-                                        <Button
-                                            type="button"
-                                            variant="destructive"
-                                            size="lg"
-                                            onClick={handleEndJob}
-                                        >
-                                            <Square className="h-4 w-4 mr-2" />
-                                            End Job
-                                        </Button>
+                                        <Button type="button" variant="destructive" size="lg" onClick={handleEndJob}><Square className="h-4 w-4 mr-2" /> End Job</Button>
                                     </div>
                                 )}
                              </CardFooter>
@@ -920,34 +779,23 @@ const PeopleForms: React.FC<PeopleFormsProps> = (props) => {
         )}
       </DashboardLayout>
 
-      {/* Status Modal */}
       <Dialog open={isStatusModalOpen} onOpenChange={setIsStatusModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>API Connection Status</DialogTitle>
-            <DialogDescription>
-              This is the live status of the connection to the Zoho People API.
-            </DialogDescription>
+            <DialogDescription>This is the live status of the connection to the Zoho People API.</DialogDescription>
           </DialogHeader>
-          <div className={`p-4 rounded-md ${
-            apiStatus.status === 'success' ? 'bg-green-100 dark:bg-green-900/50' 
-            : apiStatus.status === 'error' ? 'bg-red-100 dark:bg-red-900/50' 
-            : 'bg-muted'
-          }`}>
+          <div className={`p-4 rounded-md ${apiStatus.status === 'success' ? 'bg-green-100 dark:bg-green-900/50' : apiStatus.status === 'error' ? 'bg-red-100 dark:bg-red-900/50' : 'bg-muted'}`}>
             <p className="font-bold text-lg">{apiStatus.status.charAt(0).toUpperCase() + apiStatus.status.slice(1)}</p>
             <p className="text-sm text-muted-foreground mt-1">{apiStatus.message}</p>
           </div>
           {apiStatus.fullResponse && (
             <div className="mt-4">
               <h4 className="text-sm font-semibold mb-2 text-foreground">Full Response from Server:</h4>
-              <pre className="bg-muted p-4 rounded-lg text-xs font-mono text-foreground border max-h-60 overflow-y-auto">
-                {JSON.stringify(apiStatus.fullResponse, null, 2)}
-              </pre>
+              <pre className="bg-muted p-4 rounded-lg text-xs font-mono text-foreground border max-h-60 overflow-y-auto">{JSON.stringify(apiStatus.fullResponse, null, 2)}</pre>
             </div>
           )}
-          <DialogFooter>
-            <Button onClick={() => setIsStatusModalOpen(false)} className="mt-4">Close</Button>
-          </DialogFooter>
+          <DialogFooter><Button onClick={() => setIsStatusModalOpen(false)} className="mt-4">Close</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>

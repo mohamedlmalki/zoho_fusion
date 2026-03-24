@@ -184,7 +184,7 @@ export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({
   const [isLoadingLayout, setIsLoadingLayout] = useState(false);
 
   // Safely access stopAfterFailures from formData (needs interface update or cast)
-  const stopAfterFailures = (jobState.formData as any).stopAfterFailures || 0;
+  const stopAfterFailures = (jobState.formData as any).stopAfterFailures || 4;
 
   // --- FIX START: Safe State Update Logic ---
   const handleFormDataChange = useCallback((field: keyof ProjectsFormData | 'stopAfterFailures', value: any) => {

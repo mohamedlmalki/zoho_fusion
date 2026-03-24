@@ -138,7 +138,6 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
             } else {
                 setSelectedProjectId(null);
             }
-            toast({ title: "Projects Loaded", description: `${result.data.length} projects found.` });
         } else {
             setProjects([]);
             setSelectedProjectId(null);
@@ -190,12 +189,59 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
         }
     };
 
+    // --- THE FIX: NEW EVENT LISTENERS FOR AUTO-PAUSE & COMPLETION ---
+    const handleJobPaused = (data: { profileName: string, reason: string }) => {
+        setJobs((prev: any) => ({
+            ...prev,
+            [data.profileName]: {
+                ...prev[data.profileName],
+                isPaused: true
+            }
+        }));
+        toast({ title: "Auto-Paused", description: data.reason, variant: "destructive" });
+    };
+
+    const handleBulkComplete = (data: { profileName: string, jobType: string }) => {
+        if (data.jobType === 'projects') {
+            setJobs((prev: any) => ({
+                ...prev,
+                [data.profileName]: {
+                    ...prev[data.profileName],
+                    isProcessing: false,
+                    isPaused: false,
+                    isComplete: true
+                }
+            }));
+            toast({ title: "Job Complete", description: "All tasks have been processed." });
+        }
+    };
+
+    const handleBulkEnded = (data: { profileName: string, jobType: string }) => {
+        if (data.jobType === 'projects') {
+            setJobs((prev: any) => ({
+                ...prev,
+                [data.profileName]: {
+                    ...prev[data.profileName],
+                    isProcessing: false,
+                    isPaused: false
+                }
+            }));
+            toast({ title: "Job Ended", description: "The bulk task job was ended." });
+        }
+    };
+    // -----------------------------------------------------------------
+
     socket.on('apiStatusResult', handleApiStatus);
     socket.on('projectsProjectsResult', handleProjectsResult); 
     socket.on('projectsTasksResult', handleTasksResult);       
     socket.on('projectsUpdateProjectResult', handleUpdateProjectResult);
     socket.on('projectsUpdateProjectError', handleUpdateProjectError);
     socket.on('bulkError', handleBulkError);
+    
+    // ATTACH THE NEW LISTENERS
+    socket.on('jobPaused', handleJobPaused);
+    socket.on('bulkComplete', handleBulkComplete);
+    socket.on('bulkEnded', handleBulkEnded);
 
     return () => {
       socket.off('apiStatusResult', handleApiStatus);
@@ -204,8 +250,13 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
       socket.off('projectsUpdateProjectResult', handleUpdateProjectResult);
       socket.off('projectsUpdateProjectError', handleUpdateProjectError);
       socket.off('bulkError', handleBulkError);
+      
+      // DETACH THE NEW LISTENERS
+      socket.off('jobPaused', handleJobPaused);
+      socket.off('bulkComplete', handleBulkComplete);
+      socket.off('bulkEnded', handleBulkEnded);
     };
-  }, [socket, toast, selectedProjectId, handleFetchProjects, isUpdatingName]); 
+  }, [socket, toast, selectedProjectId, handleFetchProjects, isUpdatingName, setJobs]); 
 
   const fetchTasks = useCallback(() => {
       if (socket && activeProfileName && selectedProjectId && selectedProfile) {
@@ -325,7 +376,6 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
       }));
   };
 
-  // --- NEW: RETRY FAILED LOGIC (FIXED) ---
   const handleRetryFailed = () => {
       if (!activeProfileName || !jobState) return;
       
@@ -335,7 +385,6 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
           return;
       }
 
-      // Assuming 'projectName' in result corresponds to the task name
       const failedNames = failedItems.map(r => r.projectName).join('\n'); 
 
       setJobs(prev => ({
@@ -350,14 +399,12 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
               totalToProcess: failedItems.length,
               formData: {
                   ...prev[activeProfileName].formData,
-                  // FIX: Use 'primaryValues' as the text area binds to this field in TaskBulkForm
                   primaryValues: failedNames 
               }
           }
       }));
       toast({ title: "Retry Ready", description: `${failedItems.length} failed tasks loaded.` });
   };
-  // ------------------------------
 
   return (
     <>
@@ -422,7 +469,7 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
                                             },
                                         }));
                                     }}
-                                    onRetry={handleRetryFailed} // Pass handler
+                                    onRetry={handleRetryFailed}
                                 />
                             </div>
                         </div>

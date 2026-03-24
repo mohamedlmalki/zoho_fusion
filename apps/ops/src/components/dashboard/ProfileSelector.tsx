@@ -1,6 +1,6 @@
 // --- FILE: src/components/dashboard/ProfileSelector.tsx ---
 import React, { useEffect, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,8 +26,6 @@ type ApiStatus = {
 };
 
 type AllJobs = TicketJobs | InvoiceJobs | CatalystJobs | EmailJobs | QntrlJobs | PeopleJobs | CreatorJobs | ProjectsJobs | WebinarJobs | FsmContactJobs | BookingJobs | any;
-
-// REMOVED 'expense' from here
 type ServiceType = 'desk' | 'catalyst' | 'qntrl' | 'people' | 'creator' | 'projects' | 'meeting' | 'fsm' | 'bookings';
 
 interface ProfileSelectorProps {
@@ -58,8 +56,38 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
   service = 'desk', 
 }) => {
 
+  const filteredProfiles = useMemo(() => {
+    if (!profiles || profiles.length === 0) return [];
+    
+    const strictlyFiltered = profiles.filter(p => {
+      if (!service) return true;
+      if (service === 'desk') return p.desk && p.desk.orgId;
+      if (service === 'catalyst') return p.catalyst && p.catalyst.projectId;
+      if (service === 'qntrl') return p.qntrl && p.qntrl.orgId;
+      if (service === 'people') return p.people && p.people.orgId;
+      if (service === 'creator') return p.creator && p.creator.appName;
+      if (service === 'projects') return p.projects && p.projects.portalId;
+      if (service === 'meeting') return p.meeting && p.meeting.zsoid;
+      if (service === 'fsm') return p.fsm && p.fsm.orgId;
+      if (service === 'bookings') return p.bookings && p.bookings.workspaceId;
+      return true;
+    });
+
+    if (strictlyFiltered.length === 0) {
+        if (service === 'bookings') return [];
+        return profiles;
+    }
+
+    return strictlyFiltered;
+  }, [profiles, service]);
+
   useEffect(() => {
-    // Only verify status if the selected profile is valid for the current service
+    if (!selectedProfile && filteredProfiles.length > 0) {
+        onProfileChange(filteredProfiles[0].profileName);
+    }
+  }, [selectedProfile, filteredProfiles, onProfileChange]);
+
+  useEffect(() => {
     if (selectedProfile?.profileName && socket?.connected) {
         let isValid = true;
         if(service === 'bookings' && (!selectedProfile.bookings || !selectedProfile.bookings.workspaceId)) isValid = false;
@@ -72,37 +100,6 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
         }
     }
   }, [selectedProfile?.profileName, socket?.connected, service, socket, selectedProfile]);
-
-  const filteredProfiles = useMemo(() => {
-    if (!profiles || profiles.length === 0) return [];
-    
-    // 1. Try to filter strictly by service
-    const strictlyFiltered = profiles.filter(p => {
-      if (!service) return true;
-      if (service === 'desk') return p.desk && p.desk.orgId;
-      if (service === 'catalyst') return p.catalyst && p.catalyst.projectId;
-      if (service === 'qntrl') return p.qntrl && p.qntrl.orgId;
-      if (service === 'people') return p.people && p.people.orgId;
-      if (service === 'creator') return p.creator && p.creator.appName;
-      if (service === 'projects') return p.projects && p.projects.portalId;
-      if (service === 'meeting') return p.meeting && p.meeting.zsoid;
-      if (service === 'fsm') return p.fsm && p.fsm.orgId;
-      // --- STRICT FILTER FOR BOOKINGS ---
-      if (service === 'bookings') return p.bookings && p.bookings.workspaceId;
-      return true;
-    });
-
-    // 2. FALLBACK LOGIC
-    if (strictlyFiltered.length === 0) {
-        // If we are on Bookings, return EMPTY list to force empty state UI
-        if (service === 'bookings') return [];
-        
-        // Legacy fallback for other pages (can be removed later if you want strictness everywhere)
-        return profiles;
-    }
-
-    return strictlyFiltered;
-  }, [profiles, service]);
 
   const getBadgeProps = () => {
     if (!apiStatus) {
@@ -119,63 +116,56 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
   };
  
   const badgeProps = getBadgeProps();
- 
-  const getTotalToProcess = (job: any) => {
-    return job?.totalTicketsToProcess || job?.totalToProcess || 0;
-  }
+  const getTotalToProcess = (job: any) => job?.totalTicketsToProcess || job?.totalToProcess || 0;
 
   return (
-    <Card className="shadow-medium hover:shadow-large transition-all duration-300">
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-            <div>
-                <div className="flex items-center space-x-2">
-                <User className="h-5 w-5 text-primary" />
-                <CardTitle className="text-lg">Profiles</CardTitle>
-                </div>
-            </div>
-            <div className="flex items-center space-x-2 flex-shrink-0">
-                <Button variant="outline" size="icon" onClick={() => selectedProfile && onEditProfile(selectedProfile)} disabled={!selectedProfile}>
-                    <Edit className="h-4 w-4" />
+    // items-start keeps the Edit/Delete buttons pinned to the top row
+    <div className="flex items-start gap-3 w-full h-full overflow-x-auto pb-1 pt-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+      
+      {/* 1. EDIT AND DELETE BUTTONS (Aligned to Top Row) */}
+      <div className="flex items-center gap-1 border-r pr-3 shrink-0 h-9">
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => selectedProfile && onEditProfile(selectedProfile)} disabled={!selectedProfile}>
+            <Edit className="h-4 w-4" />
+        </Button>
+        <AlertDialog>
+            <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" disabled={!selectedProfile}>
+                    <Trash2 className="h-4 w-4" />
                 </Button>
-                <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                        <Button variant="destructive" size="icon" disabled={!selectedProfile}>
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                                This action cannot be undone. This will permanently delete the
-                                <span className="font-bold"> {selectedProfile?.profileName} </span>
-                                profile.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => selectedProfile && onDeleteProfile(selectedProfile.profileName)}>
-                                Delete
-                            </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-            </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center space-x-2">
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the profile.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => selectedProfile && onDeleteProfile(selectedProfile.profileName)}>
+                        Delete
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
+      {/* 2. THE NEW VERTICAL STACK (Row 1: Dropdown+Icons, Row 2: Account Info) */}
+      <div className="flex flex-col gap-2 shrink-0">
+        
+        {/* --- ROW 1: DROPDOWN & ICONS --- */}
+        <div className="flex items-center gap-3">
+          
+          {/* Dropdown (Fixed at 350px exactly like old card) */}
+          <div className="w-[350px] shrink-0">
             <Select 
-              value={selectedProfile?.profileName || ''} 
-              onValueChange={onProfileChange}
-              disabled={filteredProfiles.length === 0}
+              value={selectedProfile?.profileName || selectedProfile?.name || ""} 
+              onValueChange={(val) => { setTimeout(() => { onProfileChange(val); }, 300); }}
             >
-              <SelectTrigger className="h-12 bg-muted/50 border-border hover:bg-muted transition-colors flex-1">
+              <SelectTrigger className="h-9 bg-muted/50 border-border hover:bg-muted transition-colors w-full shadow-sm font-medium">
                 <SelectValue placeholder={filteredProfiles.length > 0 ? "Select a profile..." : "No profiles found"} />
               </SelectTrigger>
-              <SelectContent className="bg-card border-border shadow-large">
+              <SelectContent className="bg-card border-border shadow-large max-w-[400px]">
                 {filteredProfiles.length === 0 && (
                   <div className="p-2 text-sm text-muted-foreground text-center">
                     No Booking Profiles found.<br/>
@@ -191,50 +181,30 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
                   let status: 'processing' | 'paused' | 'finished' | 'ended' | null = null;
                   
                   if (job) {
-                    if (job.isProcessing) {
-                       status = job.isPaused ? 'paused' : 'processing';
-                    } else if (job.isComplete) {
-                       status = (current >= total && total > 0) ? 'finished' : 'ended';
-                    }
+                    if (job.isProcessing) status = job.isPaused ? 'paused' : 'processing';
+                    else if (job.isComplete) status = (current >= total && total > 0) ? 'finished' : 'ended';
                   }
 
                   return (
-                    <SelectItem 
-                      key={profile.profileName} 
-                      value={profile.profileName}
-                      className="cursor-pointer hover:bg-accent focus:bg-accent"
-                    >
-                      <div className="flex items-center justify-between w-full gap-2">
-                        <div className="flex items-center space-x-3 flex-shrink min-w-0">
+                    <SelectItem key={profile.profileName} value={profile.profileName} className="cursor-pointer hover:bg-accent focus:bg-accent py-2">
+                      <div className="flex items-center justify-between w-full gap-4">
+                        <div className="flex items-center space-x-2 flex-shrink min-w-0 pr-4">
                           <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                           <span className="font-medium truncate">{profile.profileName}</span>
                         </div>
                         
                         <div className="flex items-center space-x-2">
                             {failedCount > 0 && (
-                                <Badge 
-                                    variant="destructive" 
-                                    className="font-mono text-xs flex-shrink-0 gap-1 border-red-600 bg-red-100 text-red-700 hover:bg-red-100"
-                                >
-                                    <XCircle className="h-3 w-3" />
-                                    <span>{failedCount} Fail</span>
+                                <Badge variant="destructive" className="font-mono text-[10px] flex-shrink-0 gap-1 border-red-600 bg-red-100 text-red-700 hover:bg-red-100">
+                                    <XCircle className="h-3 w-3" /><span>{failedCount} Fail</span>
                                 </Badge>
                             )}
                             {status && (
-                            <Badge 
-                                variant="outline" 
-                                className={`font-mono text-xs flex-shrink-0 gap-1 ${
-                                    status === 'processing' ? 'border-primary text-primary' :
-                                    status === 'paused' ? 'border-yellow-500 text-yellow-500' :
-                                    status === 'finished' ? 'border-green-500 text-green-500' :
-                                    'border-red-500 text-red-500' 
-                                }`}
-                            >
+                            <Badge variant="outline" className={`font-mono text-[10px] flex-shrink-0 gap-1 ${status === 'processing' ? 'border-primary text-primary' : status === 'paused' ? 'border-yellow-500 text-yellow-500' : status === 'finished' ? 'border-green-500 text-green-500' : 'border-red-500 text-red-500'}`}>
                                 {status === 'processing' && <Activity className="h-3 w-3 animate-pulse"/>}
                                 {status === 'paused' && <PauseCircle className="h-3 w-3"/>}
                                 {status === 'finished' && <CheckCircle2 className="h-3 w-3"/>}
                                 {status === 'ended' && <StopCircle className="h-3 w-3"/>}
-                                
                                 <span>{current}/{total}</span>
                                 <span className="capitalize hidden sm:inline">{status}</span>
                             </Badge>
@@ -248,49 +218,71 @@ export const ProfileSelector: React.FC<ProfileSelectorProps> = ({
             </Select>
           </div>
 
+          {/* Icons (Status + Refresh) */}
           {selectedProfile && (
-            <div className="p-4 bg-gradient-muted rounded-lg border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-foreground"></span>
-               
-                <div className="flex items-center space-x-2">
-                  <Button variant={badgeProps.variant} size="sm" onClick={onShowStatus}>
-                      {badgeProps.icon}
-                      {badgeProps.text}
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="icon" 
-                    className="h-8 w-8" 
-                    onClick={onManualVerify}
-                    disabled={!apiStatus || apiStatus.status === 'loading'}
-                  >
-                      <RefreshCw className="h-4 w-4"/>
-                  </Button>
-                </div>
-              </div>
+            <div className="flex items-center gap-3 shrink-0 border-l pl-3">
+              <Button 
+                variant={apiStatus?.status === 'success' ? 'default' : apiStatus?.status === 'error' ? 'destructive' : 'secondary'} 
+                size="icon" 
+                className={cn("h-9 w-9 shrink-0 cursor-pointer shadow-sm", apiStatus?.status === 'success' && "bg-emerald-500 hover:bg-emerald-600 text-white")} 
+                onClick={onShowStatus}
+                title={apiStatus?.status === 'success' ? 'Connected' : apiStatus?.status === 'error' ? 'Connection Failed' : 'Checking...'}
+              >
+                  {apiStatus?.status === 'success' ? <CheckCircle2 className="h-4 w-4" /> : 
+                   apiStatus?.status === 'error' ? <AlertCircle className="h-4 w-4" /> : 
+                   <Loader className="h-4 w-4 animate-spin" />}
+              </Button>
 
-               <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm pt-2">
-                  {apiStatus && apiStatus.status === 'success' && apiStatus.fullResponse?.agentInfo && (
-                      <>
-                          <span className="text-muted-foreground">Agent Name:</span>
-                          <span className="font-medium text-foreground text-right truncate">{apiStatus.fullResponse.agentInfo.firstName} {apiStatus.fullResponse.agentInfo.lastName}</span>
-                          
-                          <span className="text-muted-foreground">Organization:</span>
-                          <span className="font-medium text-foreground text-right truncate">{apiStatus.fullResponse.orgName}</span>
-                      </>
-                  )}
-                  {selectedProfile.bookings?.workspaceId && service === 'bookings' && (
-                    <>
-                      <span className="text-muted-foreground">Workspace ID:</span>
-                      <span className="font-mono text-foreground text-right truncate">{selectedProfile.bookings.workspaceId}</span>
-                    </>
-                  )}
-              </div>
+              <Button 
+                variant="outline" 
+                size="icon" 
+                className="h-9 w-9 shrink-0 shadow-sm" 
+                onClick={onManualVerify}
+                disabled={!apiStatus || apiStatus.status === 'loading'}
+                title="Refresh Status"
+              >
+                  <RefreshCw className={cn("h-4 w-4", apiStatus?.status === 'loading' && "animate-spin")}/>
+              </Button>
             </div>
           )}
         </div>
-      </CardContent>
-    </Card>
+
+        {/* --- ROW 2: ACCOUNT INFO (Sits directly under dropdown) --- */}
+        {selectedProfile && (
+          <div className="flex items-center gap-2">
+            {apiStatus && apiStatus.status === 'success' && apiStatus.fullResponse?.agentInfo && (
+                <div className="flex items-center gap-4 bg-muted/40 border border-border px-3 py-1.5 rounded-md text-xs whitespace-nowrap shrink-0 shadow-sm">
+                    <span className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground font-semibold">Agent Name:</span> 
+                        <span className="font-medium text-foreground">{apiStatus.fullResponse.agentInfo.firstName} {apiStatus.fullResponse.agentInfo.lastName}</span>
+                    </span>
+                    <div className="w-px h-3 bg-border"></div>
+                    <span className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground font-semibold">Organization:</span> 
+                        <span className="font-medium text-foreground">{apiStatus.fullResponse.orgName}</span>
+                    </span>
+                    {apiStatus.fullResponse.portalName && (
+                       <>
+                          <div className="w-px h-3 bg-border"></div>
+                          <span className="flex items-center gap-1.5">
+                              <span className="text-muted-foreground font-semibold">Portal:</span> 
+                              <span className="font-medium text-foreground">{apiStatus.fullResponse.portalName}</span>
+                          </span>
+                       </>
+                    )}
+                </div>
+            )}
+
+            {selectedProfile.bookings?.workspaceId && service === 'bookings' && (
+                <div className="flex items-center gap-2 bg-muted/40 border border-border px-3 py-1.5 rounded-md text-xs whitespace-nowrap shrink-0 shadow-sm">
+                    <span className="text-muted-foreground font-semibold">Workspace ID:</span>
+                    <span className="font-mono text-foreground">{selectedProfile.bookings.workspaceId}</span>
+                </div>
+            )}
+          </div>
+        )}
+      </div>
+      
+    </div>
   );
 };

@@ -214,9 +214,19 @@ app.post('/api/profiles', (req, res) => {
         if (!newProfile || !newProfile.profileName) {
             return res.status(400).json({ success: false, error: "Profile name is required." });
         }
-        if (profiles.some(p => p.profileName === newProfile.profileName)) {
-            return res.status(400).json({ success: false, error: "A profile with this name already exists." });
+        
+        // --- THE FIX: Auto-Numbering duplicates instead of throwing an error ---
+        let baseName = newProfile.profileName;
+        let finalName = baseName;
+        let counter = 1;
+        
+        while (profiles.some(p => p.profileName === finalName)) {
+            finalName = `${baseName} (${counter})`;
+            counter++;
         }
+        newProfile.profileName = finalName;
+        // -----------------------------------------------------------------------
+
         profiles.push(newProfile);
         writeProfiles(profiles);
         res.json({ success: true, profiles });
@@ -231,12 +241,25 @@ app.put('/api/profiles/:profileNameToUpdate', (req, res) => {
         const updatedProfileData = req.body;
         const profiles = readProfiles();
         const profileIndex = profiles.findIndex(p => p.profileName === profileNameToUpdate);
+        
         if (profileIndex === -1) {
             return res.status(404).json({ success: false, error: "Profile not found." });
         }
-        if (updatedProfileData.profileName !== profileNameToUpdate && profiles.some(p => p.profileName === updatedProfileData.profileName)) {
-             return res.status(400).json({ success: false, error: "A profile with the new name already exists." });
+
+        // --- THE FIX: Auto-Numbering duplicates on Edit ---
+        let baseName = updatedProfileData.profileName;
+        let finalName = baseName;
+        let counter = 1;
+        
+        if (baseName !== profileNameToUpdate) {
+            while (profiles.some(p => p.profileName === finalName)) {
+                finalName = `${baseName} (${counter})`;
+                counter++;
+            }
+            updatedProfileData.profileName = finalName;
         }
+        // --------------------------------------------------
+
         profiles[profileIndex] = { ...profiles[profileIndex], ...updatedProfileData };
         writeProfiles(profiles);
         res.json({ success: true, profiles });
@@ -558,23 +581,26 @@ io.on('connection', (socket) => {
 
 });
 
-// 1. GET saved order
+// --- SIDEBAR PERSISTENCE ROUTE ---
+const fsPromises = require('fs').promises;
+
 app.get("/api/sidebar-order", async (req, res) => {
     try {
-        const data = await fs.readFile(ORDER_FILE, "utf-8");
+        const data = await fsPromises.readFile(__dirname + '/sidebar-order.json', "utf-8");
         res.json(JSON.parse(data));
     } catch (error) {
-        res.json([]); // Return empty if no custom order yet
+        res.json([]);
     }
 });
 
-// 2. SAVE new order
 app.post("/api/sidebar-order", express.json(), async (req, res) => {
     try {
-        await fs.writeFile(ORDER_FILE, JSON.stringify(req.body, null, 2));
+        await fsPromises.writeFile(__dirname + '/sidebar-order.json', JSON.stringify(req.body));
+        console.log("✅ Sidebar order permanently saved to server!");
         res.json({ success: true });
     } catch (error) {
-        res.status(500).json({ error: "Failed to save order" });
+        console.log("❌ Failed to save sidebar:", error);
+        res.status(500).json({ error: "Failed to save" });
     }
 });
 
