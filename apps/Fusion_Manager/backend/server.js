@@ -9,8 +9,61 @@ const PORT = 3001;
 const ACCOUNTS_FILE = path.join(__dirname, "accounts.json");
 const NOTES_FILE = path.join(__dirname, "notes.json");
 
+// ==========================================
+// IMPORTANT: PASTE YOUR WORKER URL HERE
+// ==========================================
+const WORKER_URL = "https://zoho-ops-logger.arfilm47.workers.dev"; 
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// --- FUSION GLOBAL LOGGER MIDDLEWARE ---
+app.use((req, res, next) => {
+    const path = req.path.toLowerCase();
+    
+    // 1. UPDATED ALLOWLIST: Added 'track' and 'event' to capture Plunk tracking
+    const isAllowedAction = ['import', 'send', 'bulk', 'transactional', 'track', 'event', 'user', 'contact'].some(keyword => path.includes(keyword));
+    
+    // 2. EXTRA FAILSAFE: Explicitly block known spam
+    const isSpam = ['/check-status', '/accounts', '/notes', '/subscribers', '/lists', '/automations'].some(keyword => path.includes(keyword));
+
+    if (['POST', 'PUT'].includes(req.method) && path.startsWith('/api/') && isAllowedAction && !isSpam) {
+        
+        const parts = req.path.split('/');
+        const provider = parts[2] || 'unknown';
+        const action = parts[3] || 'action';
+        
+        const source = `fusion-${provider}`;
+        const summary = `Action: ${action.replace(/-/g, ' ').toUpperCase()}`;
+
+        let sanitizedBody = {};
+        try {
+            sanitizedBody = JSON.parse(JSON.stringify(req.body)); 
+            if (sanitizedBody.apiKey) sanitizedBody.apiKey = '***REDACTED***';
+            if (sanitizedBody.credentials) sanitizedBody.credentials = '***REDACTED***';
+        } catch (e) {
+            sanitizedBody = { error: "Could not parse body" };
+        }
+
+        // Terminal Log
+        console.log(`\n[FUSION LOGGER] Sending Plunk Track -> Worker`);
+
+        if (WORKER_URL !== "YOUR_CLOUDFLARE_WORKER_URL_HERE") {
+            fetch(WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    method: req.method,
+                    source: source,
+                    summary: summary,
+                    body: sanitizedBody
+                })
+            }).catch(err => console.error("Worker Sync Error:", err.message));
+        }
+    }
+    next();
+});
+// ---------------------------------------
 
 // --- 1. IMPORT ROUTERS ---
 const activeCampaignRoutes = require('./routes/activecampaign');

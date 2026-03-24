@@ -19,6 +19,7 @@ const meetingHandler = require('./meeting-handler');
 const fsmHandler = require('./fsm-handler'); 
 const bookingsHandler = require('./bookings-handler'); 
 const analyticsService = require('./analytics-service'); // Renamed import
+const ORDER_FILE = path.join(__dirname, "sidebar-order.json");
 require('dotenv').config();
 
 // --- 🔴 PASTE YOUR WORKER URL HERE 🔴 ---
@@ -555,6 +556,26 @@ io.on('connection', (socket) => {
         analyticsService.haltSync();
     });
 
+});
+
+// 1. GET saved order
+app.get("/api/sidebar-order", async (req, res) => {
+    try {
+        const data = await fs.readFile(ORDER_FILE, "utf-8");
+        res.json(JSON.parse(data));
+    } catch (error) {
+        res.json([]); // Return empty if no custom order yet
+    }
+});
+
+// 2. SAVE new order
+app.post("/api/sidebar-order", express.json(), async (req, res) => {
+    try {
+        await fs.writeFile(ORDER_FILE, JSON.stringify(req.body, null, 2));
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to save order" });
+    }
 });
 
 server.listen(PORT, () => {
