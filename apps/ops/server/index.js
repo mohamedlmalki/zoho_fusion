@@ -18,7 +18,6 @@ const projectsHandler = require('./projects-handler');
 const meetingHandler = require('./meeting-handler');
 const fsmHandler = require('./fsm-handler'); 
 const bookingsHandler = require('./bookings-handler'); 
-const analyticsService = require('./analytics-service'); // Renamed import
 const ORDER_FILE = path.join(__dirname, "sidebar-order.json");
 require('dotenv').config();
 
