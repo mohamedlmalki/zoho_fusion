@@ -12,7 +12,6 @@ import { SaveLoadModal } from '@/components/dashboard/SaveLoadModal';
 
 // --- INVENTORY PAGES ---
 import BulkInvoices from '@/pages/BulkInvoices';
-import SingleInvoice from '@/pages/SingleInvoice';
 import EmailStatics from "@/pages/EmailStatics";
 import CustomModuleBulk from '@/pages/CustomModuleBulk';
 
@@ -537,7 +536,6 @@ const MainApp = () => {
                 <Routes>
                     {/* INVENTORY */}
                     <Route path="/bulk-invoices" element={<BulkInvoices jobs={invoiceJobs} setJobs={setInvoiceJobs} socket={socket} createInitialJobState={createInitialInvoiceJobState} onAddProfile={handleOpenAddProfile} onEditProfile={handleOpenEditProfile} onDeleteProfile={handleDeleteProfile} />} />
-                    <Route path="/single-invoice" element={<SingleInvoice onAddProfile={handleOpenAddProfile} onEditProfile={handleOpenEditProfile} onDeleteProfile={handleDeleteProfile} />} />
                     <Route path="/email-statics" element={<EmailStatics onAddProfile={handleOpenAddProfile} onEditProfile={handleOpenEditProfile} onDeleteProfile={handleDeleteProfile} />} />
                     <Route path="/custom-modules" element={<CustomModuleBulk jobs={customJobs} setJobs={setCustomJobs} socket={socket} createInitialJobState={createInitialCustomJobState} onAddProfile={handleOpenAddProfile} onEditProfile={handleOpenEditProfile} onDeleteProfile={handleDeleteProfile} />} />
                     
