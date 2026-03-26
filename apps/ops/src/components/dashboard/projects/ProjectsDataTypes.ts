@@ -1,23 +1,18 @@
-// --- FILE: src/components/dashboard/projects/ProjectsDataTypes.ts (MODIFIED) ---
+// --- FILE: src/components/dashboard/projects/ProjectsDataTypes.ts ---
 
 import { ProjectsJobState, ProjectsResult } from '@/App';
-import { ColumnDef } from '@tanstack/react-table';
 
 export interface ZohoProject {
     id: string;
     name: string;
     status: string;
-    portal_id: string; // Needed for API calls
-    // Add other fields as needed
+    portal_id: string; 
 }
 
-// <--- NEW INTERFACE --->
 export interface ZohoTaskList {
     id: string;
     name: string;
 }
-// <--- END NEW INTERFACE --->
-
 
 export interface ZohoTask {
     id: string;
@@ -37,9 +32,9 @@ export interface ZohoTask {
 }
 
 export interface ProjectsTasksFormData {
-    emails: string; // For bulk processing/assigning
-    projectId: string; // Selected Project ID
-    tasklistId: string; // <--- NEW FIELD
+    emails: string; 
+    projectId: string; 
+    tasklistId: string; 
     taskName: string;
     taskDescription: string;
     delay: number;
@@ -67,5 +62,14 @@ export interface TaskProgressState {
     filterText: string;
 }
 
-// ... (other exports remain the same)
+// <--- NEW: Background Delete Tracking State --->
+export interface ProjectsDeleteJobState {
+    isDeleting: boolean;
+    totalToDelete: number;
+    deletedCount: number;
+    failedCount: number;
+    failedIds: string[];
+}
+// <--- END NEW INTERFACE --->
+
 export { ProjectsJobState, ProjectsResult };

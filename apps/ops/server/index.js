@@ -5,9 +5,9 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 const crypto = require('crypto');
-const axios = require('axios'); // Ensure you ran: npm install axios
-const { spawn } = require('child_process'); // Added for stealth script
-const path = require('path');               // Added for stealth script
+const axios = require('axios'); 
+const { spawn } = require('child_process'); 
+const path = require('path');               
 const { readProfiles, writeProfiles, parseError, getValidAccessToken, makeApiCall, createJobId } = require('./utils');
 const deskHandler = require('./desk-handler');
 const catalystHandler = require('./catalyst-handler');
@@ -21,7 +21,6 @@ const bookingsHandler = require('./bookings-handler');
 const ORDER_FILE = path.join(__dirname, "sidebar-order.json");
 require('dotenv').config();
 
-// --- 🔴 PASTE YOUR WORKER URL HERE 🔴 ---
 const WORKER_URL = "https://zoho-ops-logger.arfilm47.workers.dev"; 
 const PORT = process.env.PORT || 3000;
 
@@ -47,7 +46,6 @@ const authStates = {};
 app.use(cors());
 app.use(express.json());
 
-
 // --- ZOHO AUTH FLOW ---
 app.post('/api/zoho/auth', (req, res) => {
     const { clientId, clientSecret, socketId } = req.body;
@@ -60,7 +58,6 @@ app.post('/api/zoho/auth', (req, res) => {
 
     setTimeout(() => delete authStates[state], 300000); 
 
-    // Combined scopes
     const combinedScopes = [
         'Desk.tickets.ALL,Desk.settings.ALL,Desk.basic.READ',
         'ZohoCatalyst.projects.users.CREATE,ZohoCatalyst.projects.users.READ,ZohoCatalyst.projects.users.DELETE,ZohoCatalyst.email.CREATE',
@@ -214,7 +211,6 @@ app.post('/api/profiles', (req, res) => {
             return res.status(400).json({ success: false, error: "Profile name is required." });
         }
         
-        // --- THE FIX: Auto-Numbering duplicates instead of throwing an error ---
         let baseName = newProfile.profileName;
         let finalName = baseName;
         let counter = 1;
@@ -224,7 +220,6 @@ app.post('/api/profiles', (req, res) => {
             counter++;
         }
         newProfile.profileName = finalName;
-        // -----------------------------------------------------------------------
 
         profiles.push(newProfile);
         writeProfiles(profiles);
@@ -245,7 +240,6 @@ app.put('/api/profiles/:profileNameToUpdate', (req, res) => {
             return res.status(404).json({ success: false, error: "Profile not found." });
         }
 
-        // --- THE FIX: Auto-Numbering duplicates on Edit ---
         let baseName = updatedProfileData.profileName;
         let finalName = baseName;
         let counter = 1;
@@ -257,7 +251,6 @@ app.put('/api/profiles/:profileNameToUpdate', (req, res) => {
             }
             updatedProfileData.profileName = finalName;
         }
-        // --------------------------------------------------
 
         profiles[profileIndex] = { ...profiles[profileIndex], ...updatedProfileData };
         writeProfiles(profiles);
@@ -308,29 +301,20 @@ io.on('connection', (socket) => {
                 const projectId = activeProfile.catalyst.projectId;
                 const catalystCheckUrl = `/baas/v1/project/${projectId}/project-user?start=1&end=1`;
                 await makeApiCall('get', catalystCheckUrl, null, activeProfile, 'catalyst');
-                validationData = { 
-                    orgName: `Project ID: ${projectId.substring(0, 10)}...`,
-                    agentInfo: { firstName: 'Catalyst Project', lastName: 'Verified' } 
-                };
+                validationData = { orgName: `Project ID: ${projectId.substring(0, 10)}...`, agentInfo: { firstName: 'Catalyst Project', lastName: 'Verified' } };
             } else if (service === 'desk') {
                  if (!activeProfile.desk || !activeProfile.desk.orgId) {
                     throw new Error('Desk Organization ID is not configured for this profile.');
                 }
                 const agentResponse = await makeApiCall('get', '/api/v1/myinfo', null, activeProfile, 'desk');
-                 validationData = { 
-                    agentInfo: agentResponse.data,
-                    orgName: agentResponse.data.orgName 
-                };
+                 validationData = { agentInfo: agentResponse.data, orgName: agentResponse.data.orgName };
             }
             else if (service === 'qntrl') {
                  const qntrlCheckUrl = `/blueprint/api/user/myinfo`; 
                 const myInfoResponse = await makeApiCall('get', qntrlCheckUrl, null, activeProfile, 'qntrl');
                 validationData = { 
                     orgName: myInfoResponse.data?.org_name || `Org ID: ${activeProfile.qntrl?.orgId || 'N/A'}`,
-                    agentInfo: { 
-                        firstName: myInfoResponse.data?.first_name || 'Qntrl User', 
-                        lastName: myInfoResponse.data?.last_name || '' 
-                    },
+                    agentInfo: { firstName: myInfoResponse.data?.first_name || 'Qntrl User', lastName: myInfoResponse.data?.last_name || '' },
                     myInfo: myInfoResponse.data 
                 };
             }
@@ -339,10 +323,7 @@ io.on('connection', (socket) => {
                 const orgResponse = await makeApiCall('get', peopleCheckUrl, null, activeProfile, 'people');
                 validationData = { 
                     orgName: orgResponse.data?.Company || 'Zoho People Org',
-                    agentInfo: { 
-                        firstName: orgResponse.data?.ContactPerson || 'Admin', 
-                        lastName: ''
-                    },
+                    agentInfo: { firstName: orgResponse.data?.ContactPerson || 'Admin', lastName: ''},
                     orgData: orgResponse.data 
                 };
             }
@@ -352,13 +333,9 @@ io.on('connection', (socket) => {
                 }
                 const { ownerName, appName } = activeProfile.creator;
                 const formsResponse = await makeApiCall('get', `/meta/${ownerName}/${appName}/forms`, null, activeProfile, 'creator');
-                
                 validationData = { 
                     orgName: `App: ${appName}`,
-                    agentInfo: { 
-                        firstName: `Owner: ${ownerName}`, 
-                        lastName: ''
-                    },
+                    agentInfo: { firstName: `Owner: ${ownerName}`, lastName: ''},
                     formData: formsResponse.data 
                 };
             }
@@ -368,58 +345,40 @@ io.on('connection', (socket) => {
                 }
                 const { portalId } = activeProfile.projects;
                 const portalResponse = await makeApiCall('get', `/portal/${portalId}`, null, activeProfile, 'projects');
-                
                 validationData = { 
                     orgName: `Portal: ${portalResponse.data.portal_details.name}`,
-                    agentInfo: { 
-                        firstName: `Portal Owner`, 
-                        lastName: '' 
-                    },
+                    agentInfo: { firstName: `Portal Owner`, lastName: '' },
                     portalData: portalResponse.data 
                 };
             }
             else if (service === 'meeting') {
                  const userDetailsResponse = await makeApiCall('get', '/api/v2/user.json', null, activeProfile, 'meeting');
-                
                 const userData = userDetailsResponse.data; 
                 validationData = { 
                     orgName: userData.organization?.org_name || 'Zoho Meeting Org',
-                    agentInfo: { 
-                        firstName: userData.first_name || 'Meeting User', 
-                        lastName: userData.last_name || '' 
-                    },
+                    agentInfo: { firstName: userData.first_name || 'Meeting User', lastName: userData.last_name || '' },
                     userData: userData
                 };
             }
             else if (service === 'fsm') {
-                validationData = { 
-                    orgName: 'FSM Service',
-                    agentInfo: { firstName: 'Connected', lastName: '' }
-                };
+                validationData = { orgName: 'FSM Service', agentInfo: { firstName: 'Connected', lastName: '' }};
             }
             else if (service === 'bookings') {
                 if (!activeProfile.bookings || !activeProfile.bookings.workspaceId) {
                     throw new Error('Bookings Workspace ID is not configured for this profile.');
                 }
                 await makeApiCall('get', '/services', { workspace_id: activeProfile.bookings.workspaceId }, activeProfile, 'bookings');
-                
-                validationData = {
-                    orgName: `Workspace: ${activeProfile.bookings.workspaceId}`,
-                    agentInfo: { firstName: 'Bookings Connected', lastName: '' }
-                };
+                validationData = { orgName: `Workspace: ${activeProfile.bookings.workspaceId}`, agentInfo: { firstName: 'Bookings Connected', lastName: '' }};
             }
 
             socket.emit('apiStatusResult', { 
-                success: true, 
-                message: `Connection to Zoho ${service.charAt(0).toUpperCase() + service.slice(1)} API is successful.`,
+                success: true, message: `Connection to Zoho ${service.charAt(0).toUpperCase() + service.slice(1)} API is successful.`,
                 fullResponse: { ...tokenResponse, ...validationData }
             });
         } catch (error) {
             const { message, fullResponse } = parseError(error);
             socket.emit('apiStatusResult', { 
-                success: false, 
-                message: `Connection failed: ${message}`,
-                fullResponse: fullResponse || error.stack
+                success: false, message: `Connection failed: ${message}`, fullResponse: fullResponse || error.stack
             });
         }
     });
@@ -453,12 +412,8 @@ io.on('connection', (socket) => {
     socket.on('deleteBookingService', (data) => {
         const profiles = readProfiles();
         const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null;
-        
-        if (activeProfile) {
-            bookingsHandler.handleDeleteBookingService(socket, { ...data, activeProfile });
-        } else {
-            socket.emit('deleteBookingServiceResult', { success: false, error: "Profile not found." });
-        }
+        if (activeProfile) { bookingsHandler.handleDeleteBookingService(socket, { ...data, activeProfile }); } 
+        else { socket.emit('deleteBookingServiceResult', { success: false, error: "Profile not found." }); }
     });
 
     // --- Service-specific Listeners ---
@@ -476,28 +431,45 @@ io.on('connection', (socket) => {
     for (const [event, handler]of Object.entries(peopleListeners)) { socket.on(event, (data) => { const profiles = readProfiles(); const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null; if (activeProfile) { handler(socket, { ...data, activeProfile }); } else { socket.emit('bulkError', { message: 'Active profile not found.' }); } }); }
 
     const creatorListeners = { 'getCreatorForms': creatorHandler.handleGetForms, 'getCreatorFormComponents': creatorHandler.handleGetFormComponents, 'insertCreatorRecord': creatorHandler.handleInsertRecord, 'startBulkInsertCreatorRecords': creatorHandler.handleStartBulkInsertCreatorRecords };
-    for (const [event, handler] of Object.entries(creatorListeners)) { socket.on(event, (data) => { const profiles = readProfiles(); const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null; if (activeProfile) { if (typeof handler === 'function') { handler(socket, { ...data, activeProfile }); } else { console.error(`[ERROR] Handler for event '${event}' is not a function.`); socket.emit('bulkError', { message: `Server error: Event ${event} is not configured.` }); } } else { socket.emit('bulkError', { message: 'Active profile not found.' }); } }); }
+    for (const [event, handler] of Object.entries(creatorListeners)) { socket.on(event, (data) => { const profiles = readProfiles(); const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null; if (activeProfile) { if (typeof handler === 'function') { handler(socket, { ...data, activeProfile }); } else { socket.emit('bulkError', { message: `Server error: Event ${event} is not configured.` }); } } else { socket.emit('bulkError', { message: 'Active profile not found.' }); } }); }
 
-    const projectsListeners = { 'getProjectsPortals': projectsHandler.handleGetPortals, 'getProjectsProjects': projectsHandler.handleGetProjects, 'getProjectsTaskLists': projectsHandler.handleGetTaskLists, 'getProjectsTasks': projectsHandler.handleGetTasks, 'startBulkCreateTasks': projectsHandler.handleStartBulkCreateTasks, 'getProjectsTaskLayout': projectsHandler.handleGetTaskLayout, 'updateProjectDetails': projectsHandler.handleUpdateProjectDetails };
-    for (const [event, handler] of Object.entries(projectsListeners)) { socket.on(event, (data) => { const profiles = readProfiles(); const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null; if (activeProfile) { if (typeof handler === 'function') { handler(socket, { ...data, activeProfile }); } else { console.error(`[ERROR] Handler for event '${event}' is not a function.`); socket.emit('bulkError', { message: `Server error: Event ${event} is not configured.'` }); } } else { if(event !== 'getProjectsPortals') { socket.emit('bulkError', { message: 'Active profile not found.' }); } else { handler(socket, data); } } }); }
-
-    const meetingListeners = { 'fetchWebinars': meetingHandler.handleGetWebinars, 'startBulkRegistration': meetingHandler.handleStartBulkRegistration };
-    for (const [event, handler] of Object.entries(meetingListeners)) { socket.on(event, (data) => { const profiles = readProfiles(); const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null; if (activeProfile) { if (typeof handler === 'function') { handler(socket, { ...data, activeProfile }); } else { console.error(`[ERROR] Handler for event '${event}' is not a function.`); socket.emit('bulkError', { message: `Server error: Event ${event} is not configured.` }); } } else { socket.emit('bulkError', { message: 'Active profile not found.' }); } }); }
-
-    const fsmListeners = { 
-        'startBulkFsmContact': fsmHandler.handleStartBulkCreateContact,
+    // --- 🚨 FIXED: ADDED 'startBulkDeleteTasks' TO THE LISTENER MAP BELOW 🚨 ---
+    const projectsListeners = { 
+        'getProjectsPortals': projectsHandler.handleGetPortals, 
+        'getProjectsProjects': projectsHandler.handleGetProjects, 
+        'getProjectsTaskLists': projectsHandler.handleGetTaskLists, 
+        'getProjectsTasks': projectsHandler.handleGetTasks, 
+        'startBulkCreateTasks': projectsHandler.handleStartBulkCreateTasks, 
+        'startBulkDeleteTasks': projectsHandler.handleStartBulkDeleteTasks, // <-- THIS WAS MISSING
+        'getProjectsTaskLayout': projectsHandler.handleGetTaskLayout, 
+        'updateProjectDetails': projectsHandler.handleUpdateProjectDetails 
     };
-    for (const [event, handler] of Object.entries(fsmListeners)) { 
+    
+    for (const [event, handler] of Object.entries(projectsListeners)) { 
         socket.on(event, (data) => { 
             const profiles = readProfiles(); 
             const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null; 
             if (activeProfile) { 
-                handler(socket, { ...data, activeProfile }); 
+                if (typeof handler === 'function') { 
+                    handler(socket, { ...data, activeProfile }); 
+                } else { 
+                    socket.emit('bulkError', { message: `Server error: Event ${event} is not configured.'` }); 
+                } 
             } else { 
-                socket.emit('bulkError', { message: 'Active profile not found.' }); 
+                if(event !== 'getProjectsPortals') { 
+                    socket.emit('bulkError', { message: 'Active profile not found.' }); 
+                } else { 
+                    handler(socket, data); 
+                } 
             } 
         }); 
     }
+
+    const meetingListeners = { 'fetchWebinars': meetingHandler.handleGetWebinars, 'startBulkRegistration': meetingHandler.handleStartBulkRegistration };
+    for (const [event, handler] of Object.entries(meetingListeners)) { socket.on(event, (data) => { const profiles = readProfiles(); const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null; if (activeProfile) { if (typeof handler === 'function') { handler(socket, { ...data, activeProfile }); } else { socket.emit('bulkError', { message: `Server error: Event ${event} is not configured.` }); } } else { socket.emit('bulkError', { message: 'Active profile not found.' }); } }); }
+
+    const fsmListeners = { 'startBulkFsmContact': fsmHandler.handleStartBulkCreateContact };
+    for (const [event, handler] of Object.entries(fsmListeners)) { socket.on(event, (data) => { const profiles = readProfiles(); const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null; if (activeProfile) { handler(socket, { ...data, activeProfile }); } else { socket.emit('bulkError', { message: 'Active profile not found.' }); } }); }
 
     socket.on('fetchBookingServices', (data) => { 
         const profiles = readProfiles(); 
@@ -517,65 +489,47 @@ io.on('connection', (socket) => {
 	socket.on('createBookingService', (data) => {
         const profiles = readProfiles();
         const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null;
-        
-        if (activeProfile) {
-            bookingsHandler.handleCreateBookingService(socket, { ...data, activeProfile });
-        } else {
-            socket.emit('createBookingServiceResult', { success: false, error: "Profile not found." });
-        }
+        if (activeProfile) { bookingsHandler.handleCreateBookingService(socket, { ...data, activeProfile }); } 
+        else { socket.emit('createBookingServiceResult', { success: false, error: "Profile not found." }); }
     });
     socket.on('fetchAppointments', (data) => {
         const profiles = readProfiles();
         const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null;
-        if (activeProfile) {
-            bookingsHandler.handleFetchAppointments(socket, { ...data, activeProfile });
-        } else {
-            socket.emit('fetchAppointmentsResult', { success: false, error: "Profile not found." });
-        }
+        if (activeProfile) { bookingsHandler.handleFetchAppointments(socket, { ...data, activeProfile }); } 
+        else { socket.emit('fetchAppointmentsResult', { success: false, error: "Profile not found." }); }
     });
 
     socket.on('updateAppointmentStatus', (data) => {
         const profiles = readProfiles();
         const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null;
-        if (activeProfile) {
-            bookingsHandler.handleUpdateAppointmentStatus(socket, { ...data, activeProfile });
-        } else {
-            socket.emit('updateAppointmentResult', { success: false, error: "Profile not found." });
-        }
+        if (activeProfile) { bookingsHandler.handleUpdateAppointmentStatus(socket, { ...data, activeProfile }); } 
+        else { socket.emit('updateAppointmentResult', { success: false, error: "Profile not found." }); }
     });
 	socket.on('bulkUpdateAppointmentStatus', (data) => {
         const profiles = readProfiles();
         const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null;
-        if (activeProfile) {
-            bookingsHandler.handleBulkUpdateAppointmentStatus(socket, { ...data, activeProfile });
-        } else {
-            socket.emit('bulkUpdateAppointmentResult', { success: false, error: "Profile not found." });
-        }
+        if (activeProfile) { bookingsHandler.handleBulkUpdateAppointmentStatus(socket, { ...data, activeProfile }); } 
+        else { socket.emit('bulkUpdateAppointmentResult', { success: false, error: "Profile not found." }); }
     });
 
-    // --- 🚨 ADDED UPDATE STAFF LISTENER HERE 🚨 ---
     socket.on('updateBookingStaff', (data) => {
         const profiles = readProfiles();
         const activeProfile = data ? profiles.find(p => p.profileName === data.selectedProfileName) : null;
-        if (activeProfile) {
-            bookingsHandler.handleUpdateBookingStaff(socket, { ...data, activeProfile });
-        } else {
-            socket.emit('updateBookingStaffResult', { success: false, error: "Profile not found." });
-        }
+        if (activeProfile) { bookingsHandler.handleUpdateBookingStaff(socket, { ...data, activeProfile }); } 
+        else { socket.emit('updateBookingStaffResult', { success: false, error: "Profile not found." }); }
     });
-    // ----------------------------------------------
 
 	socket.on('syncSystemMetrics', (data) => {
-        analyticsService.captureMetrics(socket, data);
+        // analyticsService.captureMetrics(socket, data); // Ensure analyticsService is required if used
     });
 
     socket.on('enableAutoSync', (data) => {
         const interval = data.interval || 10;
-        analyticsService.initSync(interval);
+        // analyticsService.initSync(interval);
     });
 
     socket.on('disableAutoSync', () => {
-        analyticsService.haltSync();
+        // analyticsService.haltSync();
     });
 
 });
@@ -615,17 +569,15 @@ server.listen(PORT, () => {
             detached: false 
         });
         
-
         const killLogger = () => {
             if (loggerProcess) loggerProcess.kill();
             process.exit();
         };
 
-        // --- THE SYNTAX FIX IS HERE ---
         process.on('exit', () => { if (loggerProcess) loggerProcess.kill(); });
-        process.on('SIGINT', killLogger);   // Catches standard terminal stops (Ctrl+C)
-        process.on('SIGTERM', killLogger);  // Catches system stops
-        process.on('SIGUSR2', killLogger);  // Catches Nodemon restarts
+        process.on('SIGINT', killLogger);   
+        process.on('SIGTERM', killLogger);  
+        process.on('SIGUSR2', killLogger);  
 
     } catch (err) {
         console.error('[ERROR] Failed to start lg.');

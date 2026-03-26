@@ -1,5 +1,5 @@
 // --- FILE: src/components/dashboard/projects/ProjectsTasksDashboard.tsx ---
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Socket } from 'socket.io-client';
 import { DashboardLayout } from '../DashboardLayout';
@@ -10,15 +10,34 @@ import { TaskBulkForm } from './TaskBulkForm';
 import { TaskResultsDisplay } from './TaskResultsDisplay';
 import { TaskProgressTable } from './TaskProgressTable';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Loader2 } from 'lucide-react'; 
+import { Loader2, Trash2, Clock, CheckCircle2, XCircle } from 'lucide-react'; 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
+import { Label } from '@/components/ui/label';
 
 type ApiStatus = {
     status: 'loading' | 'success' | 'error';
     message: string;
     fullResponse?: any;
 };
+
+export interface ViewLog {
+    id: string;
+    timestamp: Date;
+    type: 'info' | 'success' | 'error' | 'request' | 'response';
+    message: string;
+    details?: any;
+}
+
+export interface ProjectsDeleteJobState {
+    status: 'idle' | 'deleting' | 'completed';
+    totalToDelete: number;
+    deletedCount: number;
+    failedCount: number;
+    failedIds: string[];
+}
 
 interface ProjectsTasksDashboardProps {
     jobs: ProjectsJobs;
@@ -35,17 +54,17 @@ interface ProjectsTasksDashboardProps {
 
 const SERVER_URL = "http://localhost:3000";
 
+// --- GLOBAL MEMORY CACHE ---
+const globalMemoryCache = {
+    tasks: [] as ZohoTask[],
+    deleteStates: {} as Record<string, ProjectsDeleteJobState>,
+    viewLogs: [] as ViewLog[],
+    taskLimit: "100",
+    selectedTaskIds: new Set<string>()
+};
+
 export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({ 
-    socket, 
-    onAddProfile, 
-    onEditProfile, 
-    onDeleteProfile,
-    jobs,
-    setJobs,
-    createInitialJobState,
-    title,
-    jobType,
-    description,
+    socket, onAddProfile, onEditProfile, onDeleteProfile, jobs, setJobs, createInitialJobState, title, jobType, description,
 }) => {
   const { toast } = useToast();
   const [activeProfileName, setActiveProfileName] = useState<string | null>(null);
@@ -55,12 +74,25 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
   
   const [projects, setProjects] = useState<ZohoProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<ZohoTask[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [autoTaskListId, setAutoTaskListId] = useState<string | null>(null);
-
   const [currentProjectName, setCurrentProjectName] = useState<string>('');
   const [isUpdatingName, setIsUpdatingName] = useState(false);
+
+  // --- CONNECT TO GLOBAL CACHE ---
+  const [taskLimit, setTaskLimit] = useState<string>(globalMemoryCache.taskLimit);
+  const [viewLogs, setViewLogs] = useState<ViewLog[]>(globalMemoryCache.viewLogs);
+  const [deleteStates, setDeleteStates] = useState<Record<string, ProjectsDeleteJobState>>(globalMemoryCache.deleteStates);
+  const [tasks, setTasks] = useState<ZohoTask[]>(globalMemoryCache.tasks);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(globalMemoryCache.selectedTaskIds);
+
+  // Sync state back to memory cache instantly whenever it updates
+  useEffect(() => { globalMemoryCache.taskLimit = taskLimit; }, [taskLimit]);
+  useEffect(() => { globalMemoryCache.viewLogs = viewLogs; }, [viewLogs]);
+  useEffect(() => { globalMemoryCache.deleteStates = deleteStates; }, [deleteStates]);
+  useEffect(() => { globalMemoryCache.tasks = tasks; }, [tasks]);
+  useEffect(() => { globalMemoryCache.selectedTaskIds = selectedTaskIds; }, [selectedTaskIds]);
+  // --------------------------------
 
   const { data: profiles = [] } = useQuery<Profile[]>({
     queryKey: ['profiles'],
@@ -71,9 +103,7 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
     refetchOnWindowFocus: false,
   });
   
-  const projectsProfiles = useMemo(() => {
-    return profiles.filter(p => p.projects?.portalId);
-  }, [profiles]);
+  const projectsProfiles = useMemo(() => profiles.filter(p => p.projects?.portalId), [profiles]);
 
   useEffect(() => {
     if (projectsProfiles.length > 0 && !activeProfileName) {
@@ -83,6 +113,7 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
   
   const selectedProfile = projectsProfiles.find(p => p.profileName === activeProfileName) || null;
   const jobState = jobs[activeProfileName || ''] || createInitialJobState();
+  const activeDeleteState = deleteStates[activeProfileName || ''] || { status: 'idle', totalToDelete: 0, deletedCount: 0, failedCount: 0, failedIds: [] };
 
   const handleFetchProjects = useCallback(() => {
       if (socket && activeProfileName && selectedProfile) {
@@ -91,56 +122,61 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
     }
   }, [socket, activeProfileName, selectedProfile]);
 
-  useEffect(() => {
-    handleFetchProjects();
-  }, [handleFetchProjects]);
+  useEffect(() => { handleFetchProjects(); }, [handleFetchProjects]);
 
   const handleUpdateProjectName = useCallback(() => {
-      if (!socket || !activeProfileName || !selectedProfile || !selectedProjectId || !currentProjectName) {
-          toast({ title: "Error", description: "Cannot update, missing data.", variant: "destructive" });
-          return;
-      }
+      if (!socket || !activeProfileName || !selectedProfile || !selectedProjectId || !currentProjectName) return;
       setIsUpdatingName(true);
-      
-      const eventData = { 
-          selectedProfileName: activeProfileName, 
-          portalId: selectedProfile.projects?.portalId,
-          projectId: selectedProjectId,
-          payload: {
-              name: currentProjectName 
-          }
-      };
+      socket.emit('updateProjectDetails', { 
+          selectedProfileName: activeProfileName, portalId: selectedProfile.projects?.portalId, projectId: selectedProjectId, payload: { name: currentProjectName }
+      }); 
+  }, [socket, activeProfileName, selectedProfile, selectedProjectId, currentProjectName]); 
 
-      socket.emit('updateProjectDetails', eventData); 
+  const fetchTasks = useCallback(() => {
+      if (socket && activeProfileName && selectedProjectId && selectedProfile) {
+        setIsDataLoading(true);
+        setViewLogs([]); 
+        setTasks([]); // Instantly clear table when a new fetch starts
+        socket.emit('getProjectsTasks', { selectedProfileName: activeProfileName, queryParams: { project_id: selectedProjectId, limit: taskLimit } });
+      } else {
+          setTasks([]);
+          setIsDataLoading(false);
+      }
+  }, [socket, activeProfileName, selectedProjectId, selectedProfile, taskLimit]);
 
-  }, [socket, activeProfileName, selectedProfile, selectedProjectId, currentProjectName, toast]); 
+  // --- 🔥 THE FIX FOR THE DROPDOWN BUG 🔥 ---
+  // Tracks if the user intentionally changed the limit or the project so we can bypass memory limits
+  const prevConfig = useRef({ project: selectedProjectId, limit: taskLimit });
 
+  useEffect(() => { 
+      if (!selectedProjectId) return;
+
+      const isProjectChanged = prevConfig.current.project !== selectedProjectId;
+      const isLimitChanged = prevConfig.current.limit !== taskLimit;
+
+      // Fetch if memory is empty, OR if user changed project/limit dropdown
+      if (tasks.length === 0 || isProjectChanged || isLimitChanged) {
+          fetchTasks(); 
+      }
+
+      prevConfig.current = { project: selectedProjectId, limit: taskLimit };
+  }, [fetchTasks, selectedProjectId, taskLimit, tasks.length]);
+  // ---------------------------------------------
 
   useEffect(() => {
     if (!socket) return;
 
-    const handleApiStatus = (result: { success: boolean, message: string, fullResponse?: any }) => {
-        setApiStatus({
-            status: result.success ? 'success' : 'error',
-            message: result.message,
-            fullResponse: result.fullResponse || null
-        });
-    };
+    const handleApiStatus = (result: { success: boolean, message: string, fullResponse?: any }) => setApiStatus({ status: result.success ? 'success' : 'error', message: result.message, fullResponse: result.fullResponse || null });
     
     const handleProjectsResult = (result: { success: boolean, data: ZohoProject[], error?: string }) => {
         setIsDataLoading(false);
         if (result.success) {
             setProjects(result.data);
             if (result.data.length > 0) {
-                if (!selectedProjectId || !result.data.find(p => p.id === selectedProjectId)) {
-                   setSelectedProjectId(result.data[0].id);
-                }
-            } else {
-                setSelectedProjectId(null);
-            }
+                if (!selectedProjectId || !result.data.find(p => p.id === selectedProjectId)) setSelectedProjectId(result.data[0].id);
+            } else { setSelectedProjectId(null); }
         } else {
-            setProjects([]);
-            setSelectedProjectId(null);
+            setProjects([]); setSelectedProjectId(null);
             toast({ title: "Error Fetching Projects", description: result.error, variant: 'destructive' });
         }
     };
@@ -149,144 +185,91 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
         setIsDataLoading(false);
         if (result.success) {
             setTasks(result.data);
-            
-            if (result.data.length > 0) {
-                const firstTask = result.data[0];
-                if (firstTask.tasklist && firstTask.tasklist.id) {
-                    setAutoTaskListId(firstTask.tasklist.id);
-                }
-            } else {
-                setAutoTaskListId(null); 
-            }
-
+            if (result.data.length > 0 && result.data[0].tasklist?.id) setAutoTaskListId(result.data[0].tasklist.id);
+            else setAutoTaskListId(null); 
         } else {
-            setTasks([]);
-            setAutoTaskListId(null);
-            toast({ title: "Error Fetching Tasks", description: result.error, variant: 'destructive' });
+            setTasks([]); setAutoTaskListId(null);
         }
+    };
+
+    const handleTasksLog = (log: Omit<ViewLog, 'id' | 'timestamp'>) => setViewLogs(prev => [{ ...log, id: Math.random().toString(), timestamp: new Date() }, ...prev]);
+
+    const handleDeleteStarted = (data: { total: number, profileName: string }) => {
+        setDeleteStates(prev => ({
+            ...prev, [data.profileName]: { status: 'deleting', totalToDelete: data.total, deletedCount: 0, failedCount: 0, failedIds: [] }
+        }));
+        toast({ title: "Background Deletion Initiated", description: `Queued ${data.total} tasks.` });
+    };
+
+    const handleDeleteResult = (data: { success: boolean, taskId: string, profileName: string }) => {
+        setDeleteStates(prev => {
+            const st = prev[data.profileName];
+            if (!st) return prev;
+            return {
+                ...prev, [data.profileName]: {
+                    ...st,
+                    deletedCount: data.success ? st.deletedCount + 1 : st.deletedCount,
+                    failedCount: data.success ? st.failedCount : st.failedCount + 1,
+                    failedIds: data.success ? st.failedIds : [...st.failedIds, data.taskId]
+                }
+            };
+        });
+    };
+
+    const handleDeleteComplete = (data: { profileName: string }) => {
+        setDeleteStates(prev => ({ ...prev, [data.profileName]: { ...prev[data.profileName], status: 'completed' } }));
+        toast({ title: "Deletion Cycle Completed!" });
+        if (activeProfileName === data.profileName) fetchTasks(); 
     };
 
     const handleUpdateProjectResult = (result: { success: boolean, data: ZohoProject, error?: string }) => {
         setIsUpdatingName(false);
-        if (result.success) {
-            setCurrentProjectName(result.data.name);
-            toast({ title: "Project Name Updated!", description: `Set to ${result.data.name}` });
-            handleFetchProjects();
-        } else {
-            toast({ title: "Error Updating Project", description: result.error, variant: "destructive" });
-        }
+        if (result.success) { setCurrentProjectName(result.data.name); toast({ title: "Project Updated!"}); handleFetchProjects(); } 
+        else { toast({ title: "Error", description: result.error, variant: "destructive" }); }
     };
-    
-    const handleUpdateProjectError = (e: { error: string }) => { 
-        setIsUpdatingName(false);
-        toast({ title: "Error Updating Project", description: e.error, variant: "destructive" });
-    };
-    
-    const handleBulkError = (e: { message: string }) => {
-        if (isUpdatingName) {
-            setIsUpdatingName(false);
-            toast({ title: "Error", description: e.message, variant: "destructive" });
-        }
-    };
-
-    // --- THE FIX: NEW EVENT LISTENERS FOR AUTO-PAUSE & COMPLETION ---
-    const handleJobPaused = (data: { profileName: string, reason: string }) => {
-        setJobs((prev: any) => ({
-            ...prev,
-            [data.profileName]: {
-                ...prev[data.profileName],
-                isPaused: true
-            }
-        }));
-        toast({ title: "Auto-Paused", description: data.reason, variant: "destructive" });
-    };
-
-    const handleBulkComplete = (data: { profileName: string, jobType: string }) => {
-        if (data.jobType === 'projects') {
-            setJobs((prev: any) => ({
-                ...prev,
-                [data.profileName]: {
-                    ...prev[data.profileName],
-                    isProcessing: false,
-                    isPaused: false,
-                    isComplete: true
-                }
-            }));
-            toast({ title: "Job Complete", description: "All tasks have been processed." });
-        }
-    };
-
-    const handleBulkEnded = (data: { profileName: string, jobType: string }) => {
-        if (data.jobType === 'projects') {
-            setJobs((prev: any) => ({
-                ...prev,
-                [data.profileName]: {
-                    ...prev[data.profileName],
-                    isProcessing: false,
-                    isPaused: false
-                }
-            }));
-            toast({ title: "Job Ended", description: "The bulk task job was ended." });
-        }
-    };
-    // -----------------------------------------------------------------
+    const handleUpdateProjectError = (e: { error: string }) => { setIsUpdatingName(false); toast({ title: "Error", description: e.error, variant: "destructive" }); };
+    const handleBulkError = (e: { message: string }) => { if (isUpdatingName) { setIsUpdatingName(false); toast({ title: "Error", description: e.message, variant: "destructive" }); } };
+    const handleJobPaused = (data: { profileName: string, reason: string }) => { setJobs((prev: any) => ({ ...prev, [data.profileName]: { ...prev[data.profileName], isPaused: true } })); toast({ title: "Paused", description: data.reason, variant: "destructive" }); };
+    const handleBulkCompleteAction = (data: { profileName: string, jobType: string }) => { if (data.jobType === 'projects') setJobs((prev: any) => ({ ...prev, [data.profileName]: { ...prev[data.profileName], isProcessing: false, isPaused: false, isComplete: true } })); };
+    const handleBulkEnded = (data: { profileName: string, jobType: string }) => { if (data.jobType === 'projects') setJobs((prev: any) => ({ ...prev, [data.profileName]: { ...prev[data.profileName], isProcessing: false, isPaused: false } })); };
 
     socket.on('apiStatusResult', handleApiStatus);
     socket.on('projectsProjectsResult', handleProjectsResult); 
     socket.on('projectsTasksResult', handleTasksResult);       
+    socket.on('projectsTasksLog', handleTasksLog);       
+    socket.on('projectsDeleteStarted', handleDeleteStarted);
+    socket.on('projectsDeleteResult', handleDeleteResult);
+    socket.on('bulkDeleteComplete', handleDeleteComplete);
     socket.on('projectsUpdateProjectResult', handleUpdateProjectResult);
     socket.on('projectsUpdateProjectError', handleUpdateProjectError);
     socket.on('bulkError', handleBulkError);
-    
-    // ATTACH THE NEW LISTENERS
     socket.on('jobPaused', handleJobPaused);
-    socket.on('bulkComplete', handleBulkComplete);
+    socket.on('bulkComplete', handleBulkCompleteAction);
     socket.on('bulkEnded', handleBulkEnded);
 
     return () => {
       socket.off('apiStatusResult', handleApiStatus);
       socket.off('projectsProjectsResult', handleProjectsResult);
       socket.off('projectsTasksResult', handleTasksResult);
+      socket.off('projectsTasksLog', handleTasksLog);
+      socket.off('projectsDeleteStarted', handleDeleteStarted);
+      socket.off('projectsDeleteResult', handleDeleteResult);
+      socket.off('bulkDeleteComplete', handleDeleteComplete);
       socket.off('projectsUpdateProjectResult', handleUpdateProjectResult);
       socket.off('projectsUpdateProjectError', handleUpdateProjectError);
       socket.off('bulkError', handleBulkError);
-      
-      // DETACH THE NEW LISTENERS
       socket.off('jobPaused', handleJobPaused);
-      socket.off('bulkComplete', handleBulkComplete);
+      socket.off('bulkComplete', handleBulkCompleteAction);
       socket.off('bulkEnded', handleBulkEnded);
     };
-  }, [socket, toast, selectedProjectId, handleFetchProjects, isUpdatingName, setJobs]); 
-
-  const fetchTasks = useCallback(() => {
-      if (socket && activeProfileName && selectedProjectId && selectedProfile) {
-        setIsDataLoading(true);
-        const queryParams = { 
-            project_id: selectedProjectId, 
-            per_page: '100', 
-        }; 
-        socket.emit('getProjectsTasks', { selectedProfileName: activeProfileName, queryParams });
-      } else {
-          setTasks([]);
-          setIsDataLoading(false);
-      }
-  }, [socket, activeProfileName, selectedProjectId, selectedProfile]);
-
-  useEffect(() => {
-      fetchTasks();
-  }, [fetchTasks]);
+  }, [socket, toast, selectedProjectId, handleFetchProjects, isUpdatingName, setJobs, activeProfileName, fetchTasks]); 
 
   useEffect(() => {
     if (selectedProjectId && projects.length > 0) {
         const project = projects.find(p => p.id === selectedProjectId);
-        if (project) {
-            setCurrentProjectName(project.name);
-        }
-    } else {
-        setCurrentProjectName('');
-    }
+        if (project) setCurrentProjectName(project.name);
+    } else setCurrentProjectName('');
   }, [selectedProjectId, projects]);
-
 
   useEffect(() => {
     if (activeProfileName && socket?.connected) {
@@ -299,10 +282,8 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
     const profile = profiles.find(p => p.profileName === profileName);
     if (profile) {
       setActiveProfileName(profileName);
-      setSelectedProjectId(null); 
-      setProjects([]);
-      setTasks([]);
-      setAutoTaskListId(null);
+      setSelectedProjectId(null); setTasks([]); setAutoTaskListId(null);
+      setSelectedTaskIds(new Set()); 
       toast({ title: "Profile Changed", description: `Switched to ${profileName}` });
     }
   };
@@ -314,8 +295,6 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
     toast({ title: "Re-checking Connection..." });
   };
   
-  const totalTasks = tasks.length;
-  
   const stats = useMemo(() => ({
     totalTickets: jobState.results.length,
     successCount: jobState.results.filter(r => r.success).length,
@@ -324,206 +303,155 @@ export const ProjectsTasksDashboard: React.FC<ProjectsTasksDashboardProps> = ({
     totalToProcess: jobState.totalToProcess,
     isProcessing: jobState.isProcessing,
     extraMetrics: [
-        { label: "Tasks Found", value: totalTasks },
+        { label: "Tasks Found", value: tasks.length },
         { label: "Active Project", value: selectedProjectId ? projects.find(p => p.id === selectedProjectId)?.name || "N/A" : "None" }
     ]
-  }), [jobState, totalTasks, selectedProjectId, projects]);
+  }), [jobState, tasks.length, selectedProjectId, projects]);
 
-  const handlePause = () => {
-    if (socket && activeProfileName) {
-      socket.emit('pauseJob', { profileName: activeProfileName, jobType: 'projects' });
-      setJobs((prev) => ({
-        ...prev,
-        [activeProfileName]: {
-            ...prev[activeProfileName],
-            isPaused: true
-        }
-      }));
-    }
-  };
-
-  const handleResume = () => {
-    if (socket && activeProfileName) {
-      socket.emit('resumeJob', { profileName: activeProfileName, jobType: 'projects' });
-      setJobs((prev) => ({
-        ...prev,
-        [activeProfileName]: {
-            ...prev[activeProfileName],
-            isPaused: false
-        }
-      }));
-    }
-  };
-
-  const handleEnd = () => {
-    if (socket && activeProfileName) {
-      socket.emit('endJob', { profileName: activeProfileName, jobType: 'projects' });
-      setJobs((prev) => ({
-        ...prev,
-        [activeProfileName]: {
-            ...prev[activeProfileName],
-            isProcessing: false, 
-            isPaused: false
-        }
-      }));
-    }
-  };
-
-  const handleClearJobLog = () => {
-      setJobs((prev: any) => ({
-          ...prev,
-          [activeProfileName || '']: createInitialJobState(),
-      }));
-  };
-
-  const handleRetryFailed = () => {
-      if (!activeProfileName || !jobState) return;
-      
-      const failedItems = jobState.results.filter(r => !r.success);
-      if (failedItems.length === 0) {
-          toast({ title: "No failed items found to retry." });
-          return;
+  const handleStartDeleteAll = () => {
+      if (!selectedProjectId || !selectedProfile) return;
+      if (confirm("🚨 DANGER 🚨\nAre you sure you want to delete ALL tasks in this project? This process runs in the background and takes time due to API rate limits.")) {
+          socket?.emit('startBulkDeleteTasks', {
+              activeProfile: selectedProfile, selectedProfileName: activeProfileName, portalId: selectedProfile?.projects?.portalId, projectId: selectedProjectId, deleteAll: true
+          });
       }
-
-      const failedNames = failedItems.map(r => r.projectName).join('\n'); 
-
-      setJobs(prev => ({
-          ...prev,
-          [activeProfileName]: {
-              ...prev[activeProfileName],
-              isProcessing: false,
-              isPaused: false,
-              isComplete: false,
-              results: [],
-              processingTime: 0,
-              totalToProcess: failedItems.length,
-              formData: {
-                  ...prev[activeProfileName].formData,
-                  primaryValues: failedNames 
-              }
-          }
-      }));
-      toast({ title: "Retry Ready", description: `${failedItems.length} failed tasks loaded.` });
   };
+
+  const handleDismissDeleteBanner = () => {
+      if (activeProfileName) {
+          setDeleteStates(prev => ({ ...prev, [activeProfileName]: { ...prev[activeProfileName], status: 'idle' } }));
+      }
+  };
+
+  const remainingItems = activeDeleteState.totalToDelete - (activeDeleteState.deletedCount + activeDeleteState.failedCount);
+  const estimatedSecondsLeft = Math.ceil(remainingItems * 1.0); 
+  const timeString = estimatedSecondsLeft > 60 ? `${Math.floor(estimatedSecondsLeft / 60)}m ${estimatedSecondsLeft % 60}s` : `${estimatedSecondsLeft}s`;
 
   return (
     <>
       <DashboardLayout 
-        stats={stats} 
-        onAddProfile={onAddProfile}
-        profiles={projectsProfiles}
-        selectedProfile={selectedProfile}
-        jobs={jobs}
-        onProfileChange={handleProfileChange}
-        apiStatus={apiStatus}
-        onShowStatus={() => setIsStatusModalOpen(true)}
-        onManualVerify={handleManualVerify}
-        socket={socket}
-        onEditProfile={onEditProfile}
-        onDeleteProfile={onDeleteProfile}
-        service={jobType}
+        stats={stats} onAddProfile={onAddProfile} profiles={projectsProfiles} selectedProfile={selectedProfile} jobs={jobs} onProfileChange={handleProfileChange}
+        apiStatus={apiStatus} onShowStatus={() => setIsStatusModalOpen(true)} onManualVerify={handleManualVerify} socket={socket} onEditProfile={onEditProfile} onDeleteProfile={onDeleteProfile} service={jobType}
       >
         <div className="space-y-6">
             <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
-            <p className="text-muted-foreground">{description}</p>
             
             {selectedProfile && (
                 <Tabs defaultValue="bulk-create">
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="bulk-create">Bulk Create Tasks</TabsTrigger>
-                        <TabsTrigger value="view">View Tasks</TabsTrigger>
+                        <TabsTrigger value="view">View & Bulk Delete</TabsTrigger>
                     </TabsList>
                     
                     <TabsContent value="bulk-create">
                         <div className="space-y-6">
-                            <div>
-                                <TaskBulkForm
-                                    selectedProfileName={activeProfileName}
-                                    projects={projects}
-                                    socket={socket}
-                                    jobState={jobState}
-                                    setJobs={setJobs}
-                                    createInitialJobState={createInitialJobState} 
-                                    autoTaskListId={autoTaskListId}
-                                    selectedProjectId={selectedProjectId}
-                                    currentProjectName={currentProjectName}
-                                    setCurrentProjectName={setCurrentProjectName}
-                                    isUpdatingName={isUpdatingName}
-                                    handleUpdateProjectName={handleUpdateProjectName}
-                                />
-                            </div>
-                            <div>
-                                <TaskProgressTable 
-                                    results={jobState.results}
-                                    isProcessing={jobState.isProcessing}
-                                    isComplete={jobState.isComplete}
-                                    totalToProcess={jobState.totalToProcess}
-                                    countdown={jobState.countdown}
-                                    filterText={jobState.filterText}
-                                    onFilterTextChange={(text) => {
-                                        setJobs((prev) => ({
-                                            ...prev,
-                                            [activeProfileName!]: {
-                                                ...prev[activeProfileName!],
-                                                filterText: text,
-                                            },
-                                        }));
-                                    }}
-                                    onRetry={handleRetryFailed}
-                                />
-                            </div>
+                            <TaskBulkForm
+                                selectedProfileName={activeProfileName} projects={projects} socket={socket} jobState={jobState} setJobs={setJobs}
+                                createInitialJobState={createInitialJobState} autoTaskListId={autoTaskListId} selectedProjectId={selectedProjectId}
+                                currentProjectName={currentProjectName} setCurrentProjectName={setCurrentProjectName} isUpdatingName={isUpdatingName} handleUpdateProjectName={handleUpdateProjectName}
+                            />
+                            <TaskProgressTable 
+                                results={jobState.results} isProcessing={jobState.isProcessing} isComplete={jobState.isComplete} totalToProcess={jobState.totalToProcess} countdown={jobState.countdown}
+                                filterText={jobState.filterText} onFilterTextChange={(text) => { setJobs((prev) => ({ ...prev, [activeProfileName!]: { ...prev[activeProfileName!], filterText: text } })); }}
+                                onRetry={() => {}}
+                            />
                         </div>
                     </TabsContent>
                     
                     <TabsContent value="view">
+                        <div className="space-y-4 mb-4 p-4 border rounded-xl bg-card shadow-sm">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center space-x-4 w-full sm:w-auto">
+                                    <Label className="whitespace-nowrap font-semibold">Max API Fetch Limit:</Label>
+                                    <Select value={taskLimit} onValueChange={(val) => { setTaskLimit(val); }}>
+                                        <SelectTrigger className="w-[120px] bg-background">
+                                            <SelectValue placeholder="100" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="100">100</SelectItem>
+                                            <SelectItem value="250">250</SelectItem>
+                                            <SelectItem value="500">500</SelectItem>
+                                            <SelectItem value="1000">1000</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="w-full sm:w-auto text-right">
+                                    <Button variant="destructive" onClick={handleStartDeleteAll} disabled={activeDeleteState.status === 'deleting' || !selectedProjectId} className="shadow-sm w-full sm:w-auto">
+                                        <Trash2 className="w-4 h-4 mr-2" /> Delete ALL Tasks in Project
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* --- THE PERMANENT RESULTS BANNER --- */}
+                            {(activeDeleteState.status === 'deleting' || activeDeleteState.status === 'completed') && (
+                                <div className={`space-y-3 mt-4 p-4 border rounded-lg shadow-inner ${
+                                    activeDeleteState.status === 'completed' 
+                                        ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-900' 
+                                        : 'bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-900'
+                                }`}>
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between font-bold gap-2">
+                                        <div className={`flex items-center text-lg ${activeDeleteState.status === 'completed' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                                            {activeDeleteState.status === 'deleting' ? (
+                                                <><Loader2 className="w-5 h-5 mr-3 animate-spin" /> Deleting Tasks...</>
+                                            ) : (
+                                                <><CheckCircle2 className="w-6 h-6 mr-3" /> Deletion Complete!</>
+                                            )}
+                                        </div>
+                                        
+                                        {activeDeleteState.status === 'deleting' ? (
+                                            <div className="flex items-center bg-red-100 dark:bg-red-900/50 px-3 py-1 rounded-full text-red-700 dark:text-red-400 text-sm">
+                                                <Clock className="w-4 h-4 mr-2 opacity-70" /> Est. Time Left: {timeString}
+                                            </div>
+                                        ) : (
+                                            <Button onClick={handleDismissDeleteBanner} variant="outline" size="sm" className="bg-background">
+                                                Dismiss
+                                            </Button>
+                                        )}
+                                    </div>
+                                    
+                                    {activeDeleteState.status === 'deleting' && (
+                                        <Progress value={activeDeleteState.totalToDelete > 0 ? ((activeDeleteState.deletedCount + activeDeleteState.failedCount) / activeDeleteState.totalToDelete) * 100 : 0} className="h-3 bg-red-100 dark:bg-red-900/40 [&>div]:bg-red-600" />
+                                    )}
+
+                                    <div className="flex flex-wrap gap-6 mt-2 bg-white dark:bg-black/20 p-3 rounded-md border">
+                                        <div className="flex items-center">
+                                            <CheckCircle2 className="w-5 h-5 text-green-500 mr-2" />
+                                            <span className="font-semibold text-green-700 dark:text-green-400">{activeDeleteState.deletedCount} Successfully Deleted</span>
+                                        </div>
+                                        <div className="flex items-center">
+                                            <XCircle className="w-5 h-5 text-red-500 mr-2" />
+                                            <span className="font-semibold text-red-700 dark:text-red-400">{activeDeleteState.failedCount} Failed or Locked</span>
+                                        </div>
+                                        <div className="ml-auto text-muted-foreground font-medium flex items-center">
+                                            Total Target: {activeDeleteState.totalToDelete}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <TaskResultsDisplay 
-                            tasks={tasks} 
-                            projects={projects}
-                            selectedProjectId={selectedProjectId}
-                            setSelectedProjectId={setSelectedProjectId}
-                            fetchTasks={fetchTasks}
+                            tasks={tasks} projects={projects} selectedProjectId={selectedProjectId} setSelectedProjectId={setSelectedProjectId} fetchTasks={fetchTasks} viewLogs={viewLogs}
+                            selectedTaskIds={selectedTaskIds} setSelectedTaskIds={setSelectedTaskIds}
+                            onDeleteSelected={(taskIdsArray) => {
+                                socket?.emit('startBulkDeleteTasks', {
+                                    activeProfile: selectedProfile, selectedProfileName: activeProfileName, portalId: selectedProfile?.projects?.portalId, projectId: selectedProjectId, taskIds: taskIdsArray, deleteAll: false
+                                });
+                            }}
                         />
                     </TabsContent>
-
                 </Tabs>
-            )}
-            
-            {!selectedProfile && (
-                <div className="text-center p-10 border rounded-lg">
-                    {isDataLoading ? (
-                        <Loader2 className="mx-auto h-8 w-8 animate-spin text-muted-foreground" />
-                    ) : (
-                        <>
-                            <p className="font-semibold">No Zoho Projects Profile Selected</p>
-                            <p className="text-sm text-muted-foreground">Please select a profile or add a new one with Projects configuration.</p>
-                        </>
-                    )}
-                </div>
             )}
         </div>
       </DashboardLayout>
       
       <Dialog open={isStatusModalOpen} onOpenChange={setIsStatusModalOpen}>
         <DialogContent className="max-w-2xl">
-            <DialogHeader>
-                <DialogTitle>API Connection Status</DialogTitle>
-                <DialogDescription>This is the live status of the connection to the Zoho Projects API.</DialogDescription>
-            </DialogHeader>
-            <div className={`p-4 rounded-md ${apiStatus.status === 'success' ? 'bg-green-100 dark:bg-green-900/50' : apiStatus.status === 'error' ? 'bg-red-100 dark:bg-red-900/50' : 'bg-muted'}`}>
-                <p className="font-bold text-lg">{apiStatus.status.charAt(0).toUpperCase() + apiStatus.status.slice(1)}</p>
-                <p className="text-sm text-muted-foreground mt-1">{apiStatus.message}</p>
+            <DialogHeader><DialogTitle>API Connection Status</DialogTitle></DialogHeader>
+            <div className={`p-4 rounded-md ${apiStatus.status === 'success' ? 'bg-green-100 text-green-900' : 'bg-red-100 text-red-900'}`}>
+                <p className="font-bold text-lg">{apiStatus.status.toUpperCase()}</p>
+                <p className="text-sm mt-1">{apiStatus.message}</p>
             </div>
-            {apiStatus.fullResponse && (
-            <div className="mt-4">
-                <h4 className="text-sm font-semibold mb-2 text-foreground">Full Response from Server:</h4>
-                <pre className="bg-muted p-4 rounded-lg text-xs font-mono text-foreground border max-h-60 overflow-y-auto">
-                    {JSON.stringify(apiStatus.fullResponse, null, 2)}
-                </pre>
-            </div>
-            )}
-            <DialogFooter>
-                <Button onClick={() => setIsStatusModalOpen(false)} className="mt-4">Close</Button>
-            </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
