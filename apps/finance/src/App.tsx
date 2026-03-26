@@ -185,22 +185,22 @@ export interface ContactJobs { [profileName: string]: ContactJobState; }
 
 // --- INITIAL STATE FACTORIES ---
 const createInitialInvoiceJobState = (): InvoiceJobState => ({
-    formData: { emails: '', subject: '', body: '', delay: 1, displayName: '', sendCustomEmail: false, sendDefaultEmail: false, customEmailMethod: 'invoice', stopAfterFailures: 0 },
+    formData: { emails: '', subject: '', body: '', delay: 1, displayName: '', sendCustomEmail: false, sendDefaultEmail: false, customEmailMethod: 'invoice', stopAfterFailures: 4 },
     results: [], isProcessing: false, isPaused: false, isComplete: false, processingStartTime: null, processingTime: 0, totalToProcess: 0, countdown: 0, currentDelay: 1, filterText: '',
 });
 
 const createInitialCustomJobState = (): CustomModuleJobState => ({
-    formData: { moduleApiName: '', bulkField: '', bulkData: '', staticData: {}, delay: 1, availableFields: [], concurrency: 1, stopAfterFailures: 0 },
+    formData: { moduleApiName: '', bulkField: '', bulkData: '', staticData: {}, delay: 1, availableFields: [], concurrency: 1, stopAfterFailures: 4 },
     results: [], isProcessing: false, isPaused: false, isComplete: false, processingStartTime: null, processingTime: 0, totalToProcess: 0, countdown: 0, currentDelay: 1, filterText: '',
 });
 
 const createInitialExpenseJobState = (): ExpenseJobState => ({
-    formData: { moduleName: '', bulkPrimaryField: '', bulkValues: '', defaultData: {}, bulkDelay: 1, concurrency: 1, fields: [], verifyLog: false, stopAfterFailures: 0 },
+    formData: { moduleName: '', bulkPrimaryField: '', bulkValues: '', defaultData: {}, bulkDelay: 1, concurrency: 1, fields: [], verifyLog: false, stopAfterFailures: 4 },
     isProcessing: false, isPaused: false, isComplete: false, processingTime: 0, results: [], totalToProcess: 0, countdown: 0, processingStartTime: null
 });
 
 const createInitialContactJobState = (): ContactJobState => ({
-    formData: { emails: '', subject: '', body: '', delay: 1, sendEmail: false, stopAfterFailures: 0, displayNames: '' },
+    formData: { emails: '', subject: '', body: '', delay: 1, sendEmail: false, stopAfterFailures: 4, displayNames: '' },
     results: [], isProcessing: false, isPaused: false, isComplete: false, processingStartTime: null, processingTime: 0, totalToProcess: 0, countdown: 0, currentDelay: 1, filterText: '',
 });
 

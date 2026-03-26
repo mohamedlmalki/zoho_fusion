@@ -18,7 +18,7 @@
       "orgId": ""
     },
     "people": {
-      "orgId": "907840828"
+      "orgId": "26544543"
     },
     "creator": {
       "baseUrl": "www.zohoapis.com",
@@ -30,6 +30,12 @@
     },
     "meeting": {
       "zsoid": ""
+    },
+    "fsm": {
+      "orgId": ""
+    },
+    "bookings": {
+      "workspaceId": ""
     }
   },
   {
