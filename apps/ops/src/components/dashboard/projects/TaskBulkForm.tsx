@@ -27,6 +27,8 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+// --- IMPORTED THE NEW SMART SPLITTER HERE ---
+import { SmartTextSplitter } from './SmartTextSplitter';
 
 interface TaskLayoutField {
     column_name: string;
@@ -504,7 +506,7 @@ export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({
                     </Button>
                 </div>
             </div>
-			
+            
             <div className="grid gap-2">
                 <Label htmlFor="projectId">Project</Label>
                 <Select 
@@ -661,6 +663,24 @@ export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({
                 {!isLoadingLayout && allFields.length > 0 && (
                     <div className="space-y-4 rounded-md border p-4">
                         <Label className="text-base font-medium">Custom Fields (Defaults)</Label>
+
+                        {/* === NEW SMART SPLITTER COMPONENT INJECTED HERE === */}
+                        <SmartTextSplitter
+                            fields={allFields
+                                .filter(f => visibleFields[f.column_name] && f.column_name !== jobState.formData.primaryField)
+                                .map(f => ({
+                                    api_name: f.column_name,
+                                    field_label: f.i18n_display_name || f.display_name,
+                                    data_type: f.column_type
+                                }))}
+                            onSplitValues={(newValues) => {
+                                Object.entries(newValues).forEach(([fieldApiName, chunkText]) => {
+                                    handleDynamicFieldChange(fieldApiName, chunkText);
+                                });
+                            }}
+                        />
+                        {/* =================================================== */}
+
                         <div className="grid grid-cols-1 gap-4">
                             {allFields
                                 .filter(field => 
