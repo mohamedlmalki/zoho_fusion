@@ -85,6 +85,7 @@ app.post('/api/zoho/auth', (req, res) => {
         'ZohoProjects.extensions.CREATE',
         'ZohoProjects.extensions.UPDATE',
         'ZohoProjects.extensions.DELETE',
+		'ZohoProjects.custom_fields.CREATE',
         'ZohoMeeting.manageOrg.READ',
         'ZohoMeeting.webinar.READ',
         'ZohoMeeting.webinar.DELETE',
@@ -556,6 +557,7 @@ app.post("/api/sidebar-order", express.json(), async (req, res) => {
         res.status(500).json({ error: "Failed to save" });
     }
 });
+
 
 server.listen(PORT, () => {
     console.log(`🚀 Server is running on http://localhost:${PORT}`);

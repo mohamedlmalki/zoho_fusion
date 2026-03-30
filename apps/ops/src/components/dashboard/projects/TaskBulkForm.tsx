@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ProjectsJobState, ZohoProject, ProjectsFormData, ProjectsJobs } from './ProjectsDataTypes';
-import { Loader2, Play, Pause, Square, ListFilterIcon, ImagePlus, Eye, Save, Upload, List, CheckCircle2, XCircle, Hash, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Loader2, Play, Pause, Square, ListFilterIcon, ImagePlus, Eye, Save, Upload, List, CheckCircle2, XCircle, Hash, AlertTriangle, Plus } from 'lucide-react';
 import { Socket } from 'socket.io-client';
 import {
     DropdownMenu,
@@ -27,7 +27,6 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-// --- IMPORTED THE NEW SMART SPLITTER HERE ---
 import { SmartTextSplitter } from './SmartTextSplitter';
 
 interface TaskLayoutField {
@@ -50,6 +49,54 @@ interface TaskLayout {
     section_details: TaskLayoutSection[];
     status_details: any[]; 
 }
+
+const CreateFieldDialog = ({ onApply, isLoading }: { onApply: (name: string, type: string) => void, isLoading: boolean }) => {
+    const [name, setName] = useState('');
+    const [type, setType] = useState('multiline');
+    const [isOpen, setIsOpen] = useState(false);
+
+    const handleApply = () => {
+        onApply(name, type);
+        setIsOpen(false);
+        setName('');
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild>
+                <Button variant="secondary" size="sm" disabled={isLoading} className="ml-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Create Zoho Field
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                    <DialogTitle>Create New Field in Zoho</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label htmlFor="fieldName">Field Name</Label>
+                        <Input id="fieldName" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Code Snippet 2" />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="fieldType">Field Type</Label>
+                        <Select value={type} onValueChange={setType}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="multiline">Multi-Line (Textarea)</SelectItem>
+                                <SelectItem value="text">Single Line (Text)</SelectItem>
+                                <SelectItem value="integer">Number</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <Button onClick={handleApply} disabled={!name}>Create Field</Button>
+            </DialogContent>
+        </Dialog>
+    );
+};
 
 const ImageToolDialog = ({ onApply }: { onApply: (html: string) => void }) => {
     const [imageUrl, setImageUrl] = useState('');
@@ -154,7 +201,6 @@ interface TaskBulkFormProps {
   setCurrentProjectName: React.Dispatch<React.SetStateAction<string>>;
   isUpdatingName: boolean;
   handleUpdateProjectName: () => void;
-  createInitialJobState?: () => ProjectsJobState; 
 }
 
 export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({ 
@@ -234,7 +280,6 @@ export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({
     }
   }, [projects, jobState.formData.projectId, onProjectChange]); 
 
-
   useEffect(() => {
     if (!socket) return;
 
@@ -270,7 +315,6 @@ export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({
         socket.off('projectsTaskLayoutError', handleTaskLayoutError);
     };
   }, [socket, toast]);
-
 
   useEffect(() => {
     const currentProjectId = jobState.formData.projectId;
@@ -440,42 +484,88 @@ export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({
   return (
     <Card>
       <CardHeader>
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <CardTitle>Bulk Create Zoho Project Tasks</CardTitle>
-            {jobState.formData.projectId && (
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" disabled={isLoadingLayout || isProcessing}>
-                            <ListFilterIcon className="mr-2 h-4 w-4" />
-                            Customize Fields
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                        <DropdownMenuLabel>Show/Hide Custom Fields</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {isLoadingLayout ? (
-                            <DropdownMenuLabel>Loading...</DropdownMenuLabel>
-                        ) : allFields.length > 0 ? (
-                            allFields.map((field) => (
-                                <DropdownMenuCheckboxItem
-                                    key={field.column_name}
-                                    checked={visibleFields[field.column_name] ?? false}
-                                    onCheckedChange={(checked) =>
-                                        setVisibleFields(prev => ({
-                                            ...prev,
-                                            [field.column_name]: !!checked
-                                        }))
+            <div className="flex items-center">
+                {jobState.formData.projectId && (
+                    <>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm" disabled={isLoadingLayout || isProcessing}>
+                                    <ListFilterIcon className="mr-2 h-4 w-4" />
+                                    Customize Fields
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                                <DropdownMenuLabel>Show/Hide Custom Fields</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                {isLoadingLayout ? (
+                                    <DropdownMenuLabel>Loading...</DropdownMenuLabel>
+                                ) : allFields.length > 0 ? (
+                                    allFields.map((field) => (
+                                        <DropdownMenuCheckboxItem
+                                            key={field.column_name}
+                                            checked={visibleFields[field.column_name] ?? false}
+                                            onCheckedChange={(checked) =>
+                                                setVisibleFields(prev => ({
+                                                    ...prev,
+                                                    [field.column_name]: !!checked
+                                                }))
+                                            }
+                                        >
+                                            {field.i18n_display_name || field.display_name}
+                                        </DropdownMenuCheckboxItem>
+                                    ))
+                                ) : (
+                                    <DropdownMenuLabel>No custom fields found.</DropdownMenuLabel>
+                                )}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        {/* --- THE NEW CREATE FIELD BUTTON --- */}
+                        <CreateFieldDialog 
+                            isLoading={isLoadingLayout}
+                            onApply={async (name, type) => {
+                                setIsLoadingLayout(true);
+                                try {
+                                    // Make sure we grab the portal ID dynamically
+                                    const portalId = projects.find(p => p.id === selectedProjectId)?.portal_id || projects[0]?.portal_id;
+                                    
+                                    // Hit the custom backend endpoint we just created
+                                    const response = await fetch('http://localhost:3000/api/projects/fields/create', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            selectedProfileName,
+                                            portalId: portalId,
+                                            projectId: selectedProjectId,
+                                            layoutId: taskLayout?.layout_id,
+                                            displayName: name,
+                                            fieldType: type
+                                        })
+                                    });
+                                    
+                                    const result = await response.json();
+                                    if (result.success) {
+                                        toast({ title: 'Success', description: 'Field created successfully! Refreshing your layout...' });
+                                        // Tell the socket to immediately reload the layout so the new box appears instantly
+                                        socket?.emit('getProjectsTaskLayout', {
+                                            selectedProfileName,
+                                            projectId: selectedProjectId
+                                        });
+                                    } else {
+                                        toast({ title: 'Error Creating Field', description: result.error, variant: 'destructive' });
+                                        setIsLoadingLayout(false);
                                     }
-                                >
-                                    {field.i18n_display_name || field.display_name}
-                                </DropdownMenuCheckboxItem>
-                            ))
-                        ) : (
-                            <DropdownMenuLabel>No custom fields found.</DropdownMenuLabel>
-                        )}
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            )}
+                                } catch (e) {
+                                    toast({ title: 'Network Error', description: 'Could not contact the local backend server.', variant: 'destructive' });
+                                    setIsLoadingLayout(false);
+                                }
+                            }} 
+                        />
+                    </>
+                )}
+            </div>
         </div>
         <CardDescription>
             Enter task names (one per line) to be created in the selected project with an optional delay.
@@ -664,7 +754,6 @@ export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({
                     <div className="space-y-4 rounded-md border p-4">
                         <Label className="text-base font-medium">Custom Fields (Defaults)</Label>
 
-                        {/* === NEW SMART SPLITTER COMPONENT INJECTED HERE === */}
                         <SmartTextSplitter
                             fields={allFields
                                 .filter(f => visibleFields[f.column_name] && f.column_name !== jobState.formData.primaryField)
@@ -679,7 +768,6 @@ export const TaskBulkForm: React.FC<TaskBulkFormProps> = ({
                                 });
                             }}
                         />
-                        {/* =================================================== */}
 
                         <div className="grid grid-cols-1 gap-4">
                             {allFields
